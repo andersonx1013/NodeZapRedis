@@ -298,7 +298,7 @@ async function createClient(usePinned) {
       token: UPSTASH_REDIS_REST_TOKEN,
     });
     authStrategy = new RemoteAuth({
-      clientId: 'anderson-bot',
+      clientId: 'anderson-bot-temp',
       store,
       backupSyncIntervalMs: 120000,
     });
@@ -306,7 +306,7 @@ async function createClient(usePinned) {
   } catch (e) {
     console.warn(chalk.yellow('Falha ao inicializar RemoteAuth (Upstash). Caindo para LocalAuth:'), e);
     authStrategy = new LocalAuth({
-      clientId: 'anderson-bot',
+      clientId: 'anderson-bot-temp',
       rmMaxRetries: 8,
     });
   }

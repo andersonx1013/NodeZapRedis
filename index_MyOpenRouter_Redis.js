@@ -16,15 +16,14 @@ httpApp.listen(PORT, () => {
   console.log(`HTTP health check listening on port ${PORT}`);
 });
 
-// --- ajustes de ambiente e compatibilidade ---
+// --- ambiente / compatibilidade ---
 const os = require('os');
 const path = require('path');
 process.env.CHROME_LOG_FILE = path.join(os.tmpdir(), 'wweb_chrome_debug.log');
-try { require('punycode'); } catch (_) { /* shim opcional */ }
 
 const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
 if (nodeMajor >= 21) {
-  console.warn(`Você está rodando Node.js v${process.versions.node}. O aviso sobre punycode ([DEP0040]) é esperado e pode ser ignorado ou mitigado com um shim.`); 
+  console.warn(`Você está rodando Node.js v${process.versions.node}. O aviso sobre punycode ([DEP0040]) é esperado e pode ser mitigado com um shim.`); 
 }
 
 // --- dependências ---
@@ -34,7 +33,7 @@ const fs = require('fs/promises');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 
-// chalk para logs com fallback
+// fallback simples de chalk
 let chalk;
 try {
   chalk = require('chalk');
@@ -51,28 +50,28 @@ try {
   };
 }
 
-// --- configurações via ambiente com fallback ---
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || 'COLOQUE_SUA_CHAVE_OPENROUTER_AQUI';
+// --- configurações ---
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://myopenrouter.onrender.com/api/v1';
 const MODEL = process.env.MODEL || 'qwen/qwen3-coder:free';
-const OPENROUTER_TIMEOUT_MS = process.env.OPENROUTER_TIMEOUT_MS ? parseInt(process.env.OPENROUTER_TIMEOUT_MS, 10) : 90000;
+const OPENROUTER_TIMEOUT_MS = process.env.OPENROUTER_TIMEOUT_MS
+  ? parseInt(process.env.OPENROUTER_TIMEOUT_MS, 10)
+  : 90000; // 90s padrão
 
-const UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL || 'https://humorous-koi-8598.upstash.io';
-const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
+const UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL || '';
+const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
 
-// comportamento fixo
 const SKIP_CLASSIFICATION = false;
 const USE_LOCAL_HEURISTIC = true;
 
 const conversationHistory = {};
 let coldStart = true;
 
-// system prompt (mantido)
 const systemMessage = `
 🚫 NÃO forneça exemplos de código, trechos \`\`\`, comandos de terminal ou descrições técnicas de programação, a menos que o usuário peça explicitamente. ...
 `;
 
-// utilitários de histórico
+// helpers
 function getFormattedMessages(history) {
   return history.map(m => ({ role: m.role, content: m.content }));
 }
@@ -99,11 +98,9 @@ function sanitizeReply(reply, userWantedCode) {
 }
 function localHeuristicTrigger(text) {
   if (!text) return false;
-  const trimmed = text.trim();
-  return /^\/bot\b/i.test(trimmed) || /^anderson[:\s]/i.test(trimmed);
+  return /^\/bot\b/i.test(text.trim()) || /^anderson[:\s]/i.test(text);
 }
 
-// classificação
 async function analyzeIfMessageIsForAI(text, contextSnippet = '') {
   if (SKIP_CLASSIFICATION) {
     console.log(chalk.yellow('→ SKIP_CLASSIFICATION ativo: respondendo sem análise.'));
@@ -112,8 +109,8 @@ async function analyzeIfMessageIsForAI(text, contextSnippet = '') {
   try {
     console.log(chalk.magenta('→ Classificando se mensagem é para a IA...'));
 
-    if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY.includes('COLOQUE')) {
-      console.warn(chalk.yellow('Chave OpenRouter não configurada corretamente. Pulando classificação.')); 
+    if (!OPENROUTER_API_KEY) {
+      console.warn(chalk.yellow('Chave OpenRouter não configurada corretamente. Pulando classificação.'));
       return false;
     }
 
@@ -142,9 +139,8 @@ Mensagem: "${text}"
   }
 }
 
-// função genérica com retry/backoff para OpenRouter
 async function sendOpenRouterRequest(body) {
-  if (!OPENROUTER_API_KEY || OPENROUTER_API_KEY.includes('COLOQUE')) {
+  if (!OPENROUTER_API_KEY) {
     throw new Error('OpenRouter API key não configurada corretamente.');
   }
 
@@ -179,7 +175,6 @@ async function sendOpenRouterRequest(body) {
   }
 }
 
-// envia para OpenRouter
 async function processMessage(text, sessionKey, userName, chatName) {
   try {
     console.log(chalk.cyan(`→ processMessage para sessão ${sessionKey} (${userName})`));
@@ -222,7 +217,6 @@ async function processMessage(text, sessionKey, userName, chatName) {
   }
 }
 
-/** store customizado Upstash Redis **/
 class UpstashRedisStore {
   constructor({ url, token }) {
     this.redis = new Redis({ url, token });
@@ -280,7 +274,6 @@ class UpstashRedisStore {
   }
 }
 
-/** criação do client com RemoteAuth / fallback **/
 async function createClient(usePinned) {
   let authStrategy;
 
@@ -341,7 +334,6 @@ async function createClient(usePinned) {
 
   const client = new Client(clientOpts);
 
-  // graceful shutdown
   async function cleanExit(reason) {
     try {
       console.log(chalk.yellow('Encerrando cliente WhatsApp...'), reason || '');
@@ -354,11 +346,9 @@ async function createClient(usePinned) {
   process.on('SIGTERM', () => cleanExit('SIGTERM'));
   process.on('uncaughtException', (err) => {
     console.error(chalk.red('Uncaught Exception (não sai automaticamente):'), err);
-    // opcional: notificar ou métricas aqui
   });
   process.on('unhandledRejection', (reason) => {
     console.error(chalk.red('Unhandled Rejection (não sai automaticamente):'), reason);
-    // opcional: se for crítico, você pode agendar um reset suave
   });
 
   client.on('qr', (qr) => {
@@ -375,7 +365,6 @@ async function createClient(usePinned) {
 
     try {
       if (message.body === '!ping') {
-        console.log('Recebeu !ping, respondendo pong.');
         await message.reply('pong!');
         return;
       }
@@ -413,38 +402,25 @@ async function createClient(usePinned) {
       if (isGroup) {
         const botId = client.info?.wid?._serialized;
         const isMentioned = message.mentionedIds?.includes(botId);
-        console.log(chalk.gray(`   Mensagem em grupo. Mencionado? ${isMentioned}`));
-
         if (!isMentioned) {
           if (USE_LOCAL_HEURISTIC && localHeuristicTrigger(message.body)) {
-            console.log(chalk.gray('   Heurística local disparou, respondendo sem classificador.'));
             shouldRespond = true;
           } else {
-            const contextSnippet = buildContextSnippet(conversationHistory[sessionKey].history, 3);
+            const contextSnippet = ''; // pode montar se quiser
             shouldRespond = await analyzeIfMessageIsForAI(message.body, contextSnippet);
-            console.log(chalk.gray(`   analyzeIfMessageIsForAI → ${shouldRespond}`));
-            if (!shouldRespond) {
-              console.log(chalk.yellow('   → Ignorando mensagem (não era para a IA).'));
-              return;
-            }
+            if (!shouldRespond) return;
           }
         }
       }
 
       const responseMessage = await processMessage(message.body, sessionKey, userName, chatName);
-      console.log(chalk.green(`   Resposta gerada: "${responseMessage}"`));
-
-      const replyOptions = {};
       if (isGroup) {
-        replyOptions.mentions = [contact];
-        await message.reply(`@${contact.id.user} ${responseMessage}`, replyOptions);
+        await message.reply(responseMessage, { mentions: [contact] });
       } else {
         await message.reply(responseMessage);
       }
-
-      console.log(chalk.green('   ✔ Resposta enviada com sucesso!'));
     } catch (err) {
-      console.error(chalk.red('⚠ Erro no handler de mensagem:'), err);
+      console.error(chalk.red('Erro no handler de mensagem:'), err);
       try {
         await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem.');
       } catch (_) {}
@@ -463,7 +439,6 @@ async function createClient(usePinned) {
   }
 }
 
-// --- entrada ---
 (async () => {
   console.log(chalk.blueBright('Iniciando bot do WhatsApp...'));
   try {

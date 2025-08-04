@@ -4,7 +4,7 @@
   "description": "",
   "main": "index_MyOpenRouter_Redis.js",
   "engines": {
-    "node": "23.x"
+    "node": "22.x"
   },
   "scripts": {
     "start": "node index_MyOpenRouter_Redis.js"

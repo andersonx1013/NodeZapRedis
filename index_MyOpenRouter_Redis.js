@@ -51,7 +51,7 @@ try {
 }
 
 // --- configurações fixas (sem usar variáveis de ambiente para Upstash) ---
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || ''; // você pode hardcodar se quiser também
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || ''; // pode hardcodar se quiser
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://myopenrouter.onrender.com/api/v1';
 const MODEL = process.env.MODEL || 'qwen/qwen3-coder:free';
 const OPENROUTER_TIMEOUT_MS = 90000; // 90s fixo
@@ -70,7 +70,7 @@ const systemMessage = `
 🚫 NÃO forneça exemplos de código, trechos \`\`\`, comandos de terminal ou descrições técnicas de programação, a menos que o usuário peça explicitamente. ...
 `;
 
-// helpers (mesmos do original)
+// helpers
 function getFormattedMessages(history) {
   return history.map(m => ({ role: m.role, content: m.content }));
 }
@@ -298,15 +298,15 @@ async function createClient(usePinned) {
       token: UPSTASH_REDIS_REST_TOKEN,
     });
     authStrategy = new RemoteAuth({
-      clientId: 'anderson-bot-temp',
+      clientId: 'anderson-bot', // ID fixo agora
       store,
-      backupSyncIntervalMs: 120000,
+      backupSyncIntervalMs: 10000, // sincroniza rápido
     });
     console.log(chalk.green('Usando RemoteAuth com Upstash Redis.'));
   } catch (e) {
     console.warn(chalk.yellow('Falha ao inicializar RemoteAuth (Upstash). Caindo para LocalAuth:'), e);
     authStrategy = new LocalAuth({
-      clientId: 'anderson-bot-temp',
+      clientId: 'anderson-bot', // mesma sessão fallback
       rmMaxRetries: 8,
     });
   }

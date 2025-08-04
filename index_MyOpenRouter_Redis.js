@@ -50,16 +50,15 @@ try {
   };
 }
 
-// --- configurações ---
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+// --- configurações fixas (sem usar variáveis de ambiente para Upstash) ---
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || ''; // você pode hardcodar se quiser também
 const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://myopenrouter.onrender.com/api/v1';
 const MODEL = process.env.MODEL || 'qwen/qwen3-coder:free';
-const OPENROUTER_TIMEOUT_MS = process.env.OPENROUTER_TIMEOUT_MS
-  ? parseInt(process.env.OPENROUTER_TIMEOUT_MS, 10)
-  : 90000; // 90s padrão
+const OPENROUTER_TIMEOUT_MS = 90000; // 90s fixo
 
-const UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL || '';
-const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || '';
+// **Hardcoded Upstash REST credentials (não usa env vars)**
+const UPSTASH_REDIS_REST_URL = 'https://humorous-koi-8598.upstash.io';
+const UPSTASH_REDIS_REST_TOKEN = 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
 
 const SKIP_CLASSIFICATION = false;
 const USE_LOCAL_HEURISTIC = true;
@@ -71,7 +70,7 @@ const systemMessage = `
 🚫 NÃO forneça exemplos de código, trechos \`\`\`, comandos de terminal ou descrições técnicas de programação, a menos que o usuário peça explicitamente. ...
 `;
 
-// helpers
+// helpers (mesmos do original)
 function getFormattedMessages(history) {
   return history.map(m => ({ role: m.role, content: m.content }));
 }
@@ -217,6 +216,7 @@ async function processMessage(text, sessionKey, userName, chatName) {
   }
 }
 
+/** store customizado Upstash Redis **/
 class UpstashRedisStore {
   constructor({ url, token }) {
     this.redis = new Redis({ url, token });
@@ -277,6 +277,7 @@ class UpstashRedisStore {
 async function createClient(usePinned) {
   let authStrategy;
 
+  // usa sempre as credenciais hardcoded para RemoteAuth
   try {
     const testRedis = new Redis({
       url: UPSTASH_REDIS_REST_URL,
@@ -303,7 +304,7 @@ async function createClient(usePinned) {
     });
     console.log(chalk.green('Usando RemoteAuth com Upstash Redis.'));
   } catch (e) {
-    console.warn(chalk.yellow('Erro ao inicializar UpstashRedisStore; caindo para LocalAuth:'), e);
+    console.warn(chalk.yellow('Falha ao inicializar RemoteAuth (Upstash). Caindo para LocalAuth:'), e);
     authStrategy = new LocalAuth({
       clientId: 'anderson-bot',
       rmMaxRetries: 8,
@@ -406,7 +407,7 @@ async function createClient(usePinned) {
           if (USE_LOCAL_HEURISTIC && localHeuristicTrigger(message.body)) {
             shouldRespond = true;
           } else {
-            const contextSnippet = ''; // pode montar se quiser
+            const contextSnippet = '';
             shouldRespond = await analyzeIfMessageIsForAI(message.body, contextSnippet);
             if (!shouldRespond) return;
           }

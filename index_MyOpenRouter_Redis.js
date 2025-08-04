@@ -276,6 +276,7 @@ class UpstashRedisStore {
 
 async function createClient(usePinned) {
   let authStrategy;
+  let store; // para uso posterior no ready
 
   // usa sempre as credenciais hardcoded para RemoteAuth
   try {
@@ -293,14 +294,14 @@ async function createClient(usePinned) {
       console.warn(chalk.yellow('[Upstash] não validou conexão, mas segue tentando.'));
     }
 
-    const store = new UpstashRedisStore({
+    store = new UpstashRedisStore({
       url: UPSTASH_REDIS_REST_URL,
       token: UPSTASH_REDIS_REST_TOKEN,
     });
     authStrategy = new RemoteAuth({
-      clientId: 'anderson-bot', // ID fixo agora
+      clientId: 'anderson-bot', // ID fixo
       store,
-      backupSyncIntervalMs: 10000, // sincroniza rápido
+      backupSyncIntervalMs: 60000, // mínimo aceito (1 minuto)
     });
     console.log(chalk.green('Usando RemoteAuth com Upstash Redis.'));
   } catch (e) {
@@ -356,8 +357,17 @@ async function createClient(usePinned) {
     console.log(chalk.blueBright('QR code gerado (escaneie com o WhatsApp):'));
     qrcode.generate(qr, { small: true });
   });
-  client.on('ready', () => {
+  client.on('ready', async () => {
     console.log(chalk.green('Client is ready!'));
+    // força salvar imediatamente após ready para garantir persistência
+    if (store && typeof store.save === 'function') {
+      try {
+        await store.save({ session: 'anderson-bot' });
+        console.log(chalk.green('[RedisStore] save forçado após ready.')); 
+      } catch (e) {
+        console.warn(chalk.yellow('Erro ao forçar save:'), e.message || e);
+      }
+    }
   });
 
   client.on('message', async (message) => {

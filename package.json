@@ -1,14 +1,17 @@
 {
   "name": "nodezap",
   "version": "1.0.0",
-  "main": "index.js",
+  "description": "",
+  "main": "index_MyOpenRouter_Redis.js",
+  "engines": {
+    "node": "23.x"
+  },
   "scripts": {
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "start": "node index_MyOpenRouter_Redis.js"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "description": "",
   "dependencies": {
     "@upstash/redis": "^1.35.3",
     "archiver": "^7.0.1",

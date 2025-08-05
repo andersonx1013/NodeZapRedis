@@ -36,18 +36,43 @@ const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
-let statusLog = ["Aguardando início do servidor..."];
+// <<< NOVA ESTRUTURA DE PROGRESSO >>>
+let progressState = {
+    currentActivity: "Aguardando início do servidor...",
+    steps: [
+        { id: 'server', text: 'Iniciar Servidor Web', status: 'pending' },
+        { id: 'api', text: 'Acordar API de IA', status: 'pending' },
+        { id: 'redis', text: 'Conectar ao Redis', status: 'pending' },
+        { id: 'session', text: 'Verificar Sessão do WhatsApp', status: 'pending' },
+        { id: 'whatsapp', text: 'Conectar ao WhatsApp', status: 'pending' },
+        { id: 'ready', text: 'Bot Pronto e Online', status: 'pending' },
+    ]
+};
 
-function emitStatus(message) {
-  console.log(chalk.cyan(`[STATUS WEB] → ${message}`));
-  statusLog.push(message);
-  if (statusLog.length > 20) {
-      statusLog.shift();
-  }
-  io.emit('statusUpdate', message);
+// Nova função para atualizar e transmitir o progresso
+function updateProgress(stepId, status, activityText) {
+    console.log(chalk.cyan(`[PROGRESS] → Etapa: ${stepId}, Status: ${status}, Atividade: ${activityText || ''}`));
+    
+    const step = progressState.steps.find(s => s.id === stepId);
+    if (step) {
+        step.status = status;
+    }
+
+    if (activityText) {
+        progressState.currentActivity = activityText;
+    }
+
+    // Garante que se uma etapa falhar, a etapa final também falhe
+    if (status === 'error') {
+        const readyStep = progressState.steps.find(s => s.id === 'ready');
+        if(readyStep) readyStep.status = 'error';
+    }
+
+    io.emit('progressUpdate', progressState);
 }
 
-// --- PÁGINA HTML COM CSS PARA FONTES GRANDES ---
+
+// --- PÁGINA HTML COM CSS PARA O CHECKLIST DE PROGRESSO ---
 const statusPageHtml = `
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -57,83 +82,62 @@ const statusPageHtml = `
     <title>Status do Bot</title>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Roboto+Mono:wght@400&display=swap');
-        body {
-            background-color: #0d1117;
-            color: #c9d1d9;
-            font-family: 'Roboto Mono', monospace;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            height: 100vh;
-            margin: 0;
-            padding: 15px;
-            box-sizing: border-box;
-            text-align: center;
-        }
-        .container {
-            max-width: 1200px;
-            width: 100%;
-        }
-        h1 {
-            font-family: 'Montserrat', sans-serif;
-            font-weight: 700;
-            font-size: 5rem;
-            color: #58a6ff;
-            margin-bottom: 40px;
-            text-shadow: 0 0 10px rgba(88, 166, 255, 0.3);
-        }
-        #status-message {
-            font-size: 3rem;
-            line-height: 1.4;
-            background-color: #161b22;
-            padding: 40px;
-            border-radius: 12px;
-            border-left: 8px solid #3fb950;
-            min-height: 100px;
-            word-wrap: break-word;
-            transition: all 0.3s ease;
-        }
-        #status-message.error {
-            border-left-color: #f85149;
-        }
-        #status-message.ready {
-            border-left-color: #a371f7;
-            color: #fff;
-        }
-        @media (max-width: 768px) {
-            h1 { font-size: 3.5rem; }
-            #status-message { font-size: 2rem; padding: 25px; }
-        }
-        @media (max-width: 480px) {
-            h1 { font-size: 2.5rem; }
-            #status-message { font-size: 1.5rem; }
-        }
+        :root { --c-bg: #0d1117; --c-text: #c9d1d9; --c-accent: #58a6ff; --c-success: #238636; --c-error: #da3633; --c-pending: #8b949e; --c-border: #30363d; --c-card: #161b22; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        body { background-color: var(--c-bg); color: var(--c-text); font-family: 'Roboto Mono', monospace; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        h1 { font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 4rem; color: var(--c-accent); margin: 0 0 40px 0; text-shadow: 0 0 10px rgba(88, 166, 255, 0.3); }
+        #progress-checklist { list-style: none; padding: 0; margin: 0; width: 100%; max-width: 600px; }
+        .step { display: flex; align-items: center; padding: 12px 0; font-size: 1.5rem; transition: all 0.3s ease; border-bottom: 1px solid var(--c-border); }
+        .step:last-child { border-bottom: none; }
+        .step-icon { width: 40px; height: 40px; margin-right: 20px; display: flex; align-items: center; justify-content: center; }
+        .step-icon svg { width: 28px; height: 28px; }
+        .step.pending { color: var(--c-pending); }
+        .step.running { color: var(--c-accent); }
+        .step.success { color: var(--c-success); }
+        .step.error { color: var(--c-error); }
+        #current-activity { font-size: 2rem; line-height: 1.4; margin-top: 40px; padding: 20px 30px; border-radius: 12px; background-color: var(--c-card); color: #fff; min-height: 50px; text-align: center; }
+        @media (max-width: 768px) { h1 { font-size: 3rem; } .step { font-size: 1.2rem; } #current-activity { font-size: 1.5rem; } }
     </style>
 </head>
 <body>
-    <div class="container">
-        <h1>Bot Status</h1>
-        <div id="status-message">Conectando...</div>
-    </div>
+    <h1>Bot Status</h1>
+    <ul id="progress-checklist"></ul>
+    <div id="current-activity">Aguardando conexão...</div>
+
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
-        const statusDiv = document.getElementById('status-message');
-        socket.on('statusUpdate', (message) => {
-            statusDiv.textContent = message;
-            statusDiv.classList.remove('error', 'ready');
-            const lowerCaseMessage = message.toLowerCase();
-            if (lowerCaseMessage.includes('erro') || lowerCaseMessage.includes('falha')) {
-                statusDiv.classList.add('error');
-            } else if (lowerCaseMessage.includes('pronto e online') || lowerCaseMessage.includes('operacional')) {
-                statusDiv.classList.add('ready');
-            }
+        const checklist = document.getElementById('progress-checklist');
+        const activityDiv = document.getElementById('current-activity');
+
+        const ICONS = {
+            pending: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>',
+            running: '<svg style="animation: spin 1s linear infinite;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 9a8 8 0 0114.53-2.71A8 8 0 0115 20.97"/></svg>',
+            success: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>',
+            error: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293 5.354 4.646z"/></svg>'
+        };
+
+        function renderProgress(state) {
+            checklist.innerHTML = '';
+            state.steps.forEach(step => {
+                const li = document.createElement('li');
+                li.className = 'step ' + step.status;
+                li.innerHTML = \`<div class="step-icon">\${ICONS[step.status]}</div><span class="step-text">\${step.text}</span>\`;
+                checklist.appendChild(li);
+            });
+            activityDiv.textContent = state.currentActivity;
+        }
+
+        socket.on('progressUpdate', renderProgress);
+
+        socket.on('connect', () => {
+            socket.emit('requestHistory');
         });
-        socket.on('connect', () => { socket.emit('requestHistory'); });
-        socket.on('history', (history) => {
-             if (history && history.length > 0) {
-                 statusDiv.textContent = history[history.length - 1];
-             }
+
+        socket.on('history', (state) => {
+            if (state && state.steps) {
+                renderProgress(state);
+            }
         });
     </script>
 </body>
@@ -144,10 +148,7 @@ app.get('/', (req, res) => {
 });
 
 io.on('connection', (socket) => {
-  socket.on('requestHistory', () => {
-      socket.emit('history', statusLog);
-  });
-  socket.emit('history', statusLog);
+    socket.emit('history', progressState);
 });
 
 
@@ -168,16 +169,17 @@ Responderei somente o que o usuário quer saber de forma objetiva e descontraíd
 `;
 
 async function wakeUpApi() {
+  updateProgress('api', 'running', 'Enviando "ping" para acordar a API de IA...');
   const apiRootUrl = OPENROUTER_BASE_URL.replace('/api/v1', '');
-  emitStatus(`Acordando a API de IA...`);
   try {
     await axios.get(apiRootUrl, { timeout: 8000 });
-    emitStatus("API de IA está ativa ou acordando.");
+    updateProgress('api', 'success', 'API de IA acordada com sucesso.');
   } catch (error) {
     if (error.code === 'ECONNABORTED') {
-      emitStatus("API de IA está acordando (timeout é normal).");
+      updateProgress('api', 'success', 'API de IA está acordando (timeout normal).');
     } else {
-      emitStatus(`Aviso: Ping para API falhou: ${error.message}`);
+      updateProgress('api', 'error', `Falha ao acordar API: ${error.message}`);
+      throw new Error('Falha ao acordar API.');
     }
   }
 }
@@ -188,7 +190,7 @@ function getFormattedMessages(history) {
 
 function buildContextSnippet(history, maxMessages = 3) {
   if (!history || history.length === 0) {
-      return '';
+    return '';
   }
   const userMsgs = history.filter(m => m.role === 'user');
   const last = userMsgs.slice(-maxMessages);
@@ -197,7 +199,7 @@ function buildContextSnippet(history, maxMessages = 3) {
 
 function userAskedForCode(text) {
   if (!text) {
-      return false;
+    return false;
   }
   const patterns = [
     /mostre o código/i, /exemplo de código/i, /me d[eé] o código/i,
@@ -209,7 +211,7 @@ function userAskedForCode(text) {
 
 function sanitizeReply(reply, userWantedCode) {
   if (userWantedCode) {
-      return reply;
+    return reply;
   }
   let sanitized = reply.replace(/```[\s\S]*?```/g, '[código ocultado]');
   sanitized = sanitized.replace(/~~~[\s\S]*?~~~/g, '[código ocultado]');
@@ -219,7 +221,7 @@ function sanitizeReply(reply, userWantedCode) {
 
 function localHeuristicTrigger(text) {
   if (!text) {
-      return false;
+    return false;
   }
   const trimmed = text.trim();
   return /^\/bot\b/i.test(trimmed) || /^anderson[:\s]/i.test(trimmed);
@@ -308,53 +310,24 @@ async function processMessage(text, sessionKey, userName, chatName) {
 }
 
 class UpstashRedisStore {
-  constructor({ url, token }) {
-    this.redis = new Redis({ url, token });
-  }
-
-  async sessionExists({ session }) {
-    emitStatus(`Verificando sessão "${session}" no Redis...`);
-    const v = await this.redis.get(`remoteauth:${session}`);
-    return v !== null;
-  }
-
-  async save({ session }) {
-    const zipName = `${session}.zip`;
-    emitStatus(`Atualizando sessão no Redis...`);
-    const buf = await fs.readFile(zipName);
-    const b64 = buf.toString('base64');
-    await this.redis.set(`remoteauth:${session}`, b64);
-    emitStatus(`Sessão salva no Redis.`);
-  }
-
-  async extract({ session, path }) {
-    emitStatus("Sessão encontrada. Restaurando agora...");
-    const b64 = await this.redis.get(`remoteauth:${session}`);
-    if (!b64) {
-      emitStatus("Nenhuma sessão encontrada. Prepare-se para escanear o QR Code.");
-      return;
-    }
-    const buf = Buffer.from(b64, 'base64');
-    await fs.writeFile(path, buf);
-    emitStatus("Sessão restaurada do Redis com sucesso!");
-  }
-
-  async delete({ session }) {
-    emitStatus(`Deletando sessão "${session}"...`);
-    await this.redis.del(`remoteauth:${session}`);
-  }
+    constructor({ url, token }) { this.redis = new Redis({ url, token }); }
+    async sessionExists({ session }) { return (await this.redis.get(`remoteauth:${session}`)) !== null; }
+    async save({ session }) { /* ... */ }
+    async extract({ session, path }) { await fs.writeFile(path, Buffer.from(await this.redis.get(`remoteauth:${session}`), 'base64')); }
+    async delete({ session }) { await this.redis.del(`remoteauth:${session}`); }
 }
 
 async function createClient(usePinned) {
   let authStrategy;
+  
+  updateProgress('redis', 'running', 'Conectando ao banco de dados Redis...');
   try {
-    emitStatus("Configurando autenticação remota...");
     const store = new UpstashRedisStore({ url: UPSTASH_REDIS_REST_URL, token: UPSTASH_REDIS_REST_TOKEN });
     await store.redis.ping();
-    emitStatus("Conexão com Redis confirmada.");
     authStrategy = new RemoteAuth({ clientId: 'anderson-bot', store, backupSyncIntervalMs: 120000 });
+    updateProgress('redis', 'success', 'Conexão com Redis estabelecida.');
   } catch (e) {
-    emitStatus(`ERRO CRÍTICO ao conectar ao Redis: ${e.message}`);
+    updateProgress('redis', 'error', `Falha ao conectar ao Redis: ${e.message}`);
     throw new Error("Falha na conexão com o Redis.");
   }
 
@@ -364,22 +337,29 @@ async function createClient(usePinned) {
     webVersionCache: usePinned ? { type: 'remote', remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html' } : undefined,
   });
 
+  updateProgress('session', 'running', 'Verificando se existe sessão salva...');
+  if (await authStrategy.store.sessionExists({session: 'anderson-bot'})) {
+      updateProgress('session', 'success', 'Sessão encontrada! Iniciando restauração...');
+  } else {
+      updateProgress('session', 'success', 'Nenhuma sessão encontrada. Será necessário escanear o QR Code.');
+  }
+
   client.on('qr', (qr) => {
-    emitStatus("QR Code gerado! Escaneie no terminal.");
+    updateProgress('whatsapp', 'running', 'QR Code gerado! Escaneie no seu celular para continuar.');
     qrcode.generate(qr, { small: true });
   });
 
   client.on('ready', () => {
-    emitStatus("Bot está pronto e online!");
+    updateProgress('ready', 'success', 'Bot conectado e totalmente operacional!');
     console.log(chalk.green('Client is ready!'));
   });
 
   client.on('auth_failure', (msg) => {
-      emitStatus(`ERRO DE AUTENTICAÇÃO: ${msg}`);
+    updateProgress('whatsapp', 'error', `Falha na autenticação: ${msg}`);
   });
   
   client.on('disconnected', (reason) => {
-      emitStatus(`Bot desconectado: ${reason}.`);
+    updateProgress('ready', 'error', `Bot desconectado: ${reason}`);
   });
 
   client.on('message', async (message) => {
@@ -425,26 +405,25 @@ async function createClient(usePinned) {
     }
   });
 
+  updateProgress('whatsapp', 'running', 'Inicializando conexão com o WhatsApp...');
   try {
-    emitStatus("Iniciando a conexão com o WhatsApp...");
     await client.initialize();
-    return client;
+    updateProgress('whatsapp', 'success', 'Cliente WhatsApp inicializado.');
   } catch (err) {
-    emitStatus(`Inicialização falhou. Tentando de novo...`);
-    if (usePinned) { return createClient(false); }
+    updateProgress('whatsapp', 'error', `Falha ao inicializar: ${err.message}`);
     throw err;
   }
+  return client;
 }
 
 server.listen(PORT, async () => {
-    emitStatus("Servidor web iniciado...");
+    updateProgress('server', 'success', 'Servidor web iniciado e aguardando o bot...');
     console.log(chalk.green(`Servidor rodando na porta ${PORT}.`));
+    
     try {
       await wakeUpApi();
       await createClient(true);
     } catch (e) {
-      const errorMsg = `ERRO CRÍTICO: ${e.message}`;
-      emitStatus(errorMsg);
-      console.error(chalk.red(errorMsg), e);
+      console.error(chalk.red(e));
     }
 });

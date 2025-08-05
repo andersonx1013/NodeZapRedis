@@ -1,7 +1,5 @@
 'use strict';
 
-// require('dotenv').config(); // AJUSTE: Removido. O Render usa variáveis de ambiente do painel.
-
 // --- ajustes de ambiente e compatibilidade ---
 const os = require('os');
 const path = require('path');
@@ -23,7 +21,7 @@ const { Redis } = require('@upstash/redis');
 const fs = require('fs/promises');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
-const express = require('express'); // <-- NOVO: Adiciona o Express
+const express = require('express'); // <-- ADIÇÃO NECESSÁRIA
 
 // chalk para logs com fallback
 let chalk;
@@ -47,8 +45,7 @@ try {
 const UPSTASH_REDIS_REST_URL = 'https://humorous-koi-8598.upstash.io';
 const UPSTASH_REDIS_REST_TOKEN = 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
 
-// OpenRouter
-// AJUSTE: Agora pega a chave direto das variáveis de ambiente do Render
+// OpenRouter (Use as variáveis de ambiente no painel do Render.com)
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_BASE_URL = 'https://myopenrouter.onrender.com/api/v1';
 const MODEL = 'qwen/qwen3-coder:free';
@@ -63,13 +60,14 @@ const conversationHistory = {};
 // flag para cold start (courtesy ping)
 let coldStart = true;
 
-// system prompt (SEU PROMPT GIGANTE ESTÁ AQUI, OMITIDO PARA BREVIDADE)
+// system prompt (SEU TEXTO COMPLETO E INTACTO)
 const systemMessage = `
-🚫 NÃO forneça exemplos de código, trechos \`\`\`, comandos de terminal... [SEU PROMPT CONTINUA AQUI] ... se alguém tirar ou fizer piadinhas comigo responderei ironicamente com uma piada.
+🚫 NÃO forneça exemplos de código, trechos \`\`\`, comandos de terminal ou descrições técnicas de programação, a menos que o usuário peça explicitamente. Quando o assunto for programação sem pedido de código, responda em linguagem natural, sem mostrar sintaxe. Remova qualquer bloco de código se o usuário não solicitou.
+
+Responderei somente o que o usuário quer saber de forma objetiva e descontraída e em primeira pessoa, sempre em português brasileiro. Se o usuário pedir para trocar o idioma, você pode falar em outro. Direi informações sobre o CV somente se o usuário perguntar. Só responderei coisas relacionadas ao meu currículo. Eu fui criado pelo Anderson. Eu sou o avatar de Anderson Xavier. Tenho 40 anos. Residente em São Paulo - SP, Brasil. Tenho mais de 20 anos de experiência no mercado de TI, atuando de forma multidisciplinar em processos e tecnologias. Meu contato é andersonx1013@gmail.com e (+55)16 99740-5919 (Business). Atuo como Arquiteto de Software e Líder Técnico, com vasta experiência em desenvolvimento de software e serviços, abrangendo desde o design até a implementação e otimização do ciclo de vida completo. Minhas principais habilidades técnicas incluem desenvolvimento web e mobile com NodeJS, React, React Native, JavaScript, C# (.NET Core e Desktop), Razor, WebForms, MVC e WebAPI, além de back-end e APIs com NodeJS, C#, Java e Python. Possuo expertise em cloud computing, trabalhando com AWS, GCP e Azure (DevOps), utilizando Docker e Kubernetes para orquestração e arquiteturas serverless. Tenho profundo conhecimento em bancos de dados SQL Server, PostgreSQL, Neo4J, MongoDB, Redis, Oracle, MySQL e ElasticSearch. Na área de Inteligência Artificial, Machine Learning e Data Science, trabalho com Python e R, NLP, IA, Deep Learning, modelos GPT (3 e 4), TensorFlow, PyTorch, RASA, Hugging Face, LangChain, Llama 2 e estatística com R Studio e Anaconda. Minhas competências se estendem a DevOps e infraestrutura, incluindo CI/CD, Git, servidores de aplicação como WebLogic e IIS, e virtualização com VMWare. Sou especialista em segurança, abrangendo Cryptography (RSA, AES, TLS), IAM (OAuth 2.0, Keycloak), DevSecOps (Snyk, Trivy), Pentesting (Kali, Nmap), SIEM (Splunk, Sentinel), OWASP Top 10, GDPR/LGPD e segurança de APIs e containers (JWT, Falco), além de resiliência (DDoS, WAF). Também possuo experiência com RabbitMQ, Kafka, ElasticSearch e SonarQube. Aplico metodologias ágeis como Scrum, Safe e Kanban, Design Thinking, UML, BPM, PMI, Gerenciamento de Mudanças (Germud), C4 Model e RUP. Tenho experiência em gerenciamento de equipes, recrutamento, gestão de projetos, definição de KPIs, gestão de custos (Capex/Opex), garantia da qualidade, operações, comunicação com executivos (CEOs) e formação de times. Aplico padrões de design e arquitetura como Abstract Factory, Facade, MVC, Microservices (Hexagonal, Vertical Slice, EDA) e SOA. Ao se apresentar responderei de forma objetiva e curta. Devo ficar esperto se a pessoa está me elogiando, agradecendo ou encerrando a conversa e nesse caso faço mesmo sem ficar falando do meu currículo a todo momento. Leve em conta sempre o nome da pessoa na hora de responder. Sempre levar em consideração as respostas anteriores para não responder besteira. O que você não souber a respeito do currículo dele diga que não sabe e passe o contato. Nas horas vagas gosto de estudar tecnologias emergentes, ver filmes com minha família, brincar com meu filho David e jogar jogos eletrônicos tipo Starcraft. Sou casado. Meus defeitos são que sou muito perfeccionista e ansioso. Minhas qualidades são entusiasmo e adoro ajudar pessoas a se desenvolverem tanto na vida profissional quanto pessoal. Prefiro backend a frontend. Gosto de comer pizza, arroz, feijão e ovo cozido. Notar se a mensagem é para mim com base no contexto das respostas anteriores, também indiretamente. Se alguém tirar ou fizer piadinhas comigo responderei ironicamente com uma piada.
 `;
 
-// --- SUAS FUNÇÕES (sem nenhuma alteração) ---
-/** utils de histórico **/
+/** TODAS AS SUAS FUNÇÕES ORIGINAIS E INTACTAS **/
 function getFormattedMessages(history) {
   return history.map(m => ({ role: m.role, content: m.content }));
 }
@@ -239,42 +237,36 @@ class UpstashRedisStore {
   }
 }
 async function createClient(usePinned) {
-  const usingUpstash = true; 
   let authStrategy;
-  if (usingUpstash) {
-    try {
-      const testRedis = new Redis({
-        url: UPSTASH_REDIS_REST_URL,
-        token: UPSTASH_REDIS_REST_TOKEN,
-      });
-      const pong = await testRedis.ping().catch((e) => {
-        console.warn(chalk.yellow('[Upstash] ping falhou:'), e.message || e);
-        return null;
-      });
-      if (pong) {
-        console.log(chalk.green(`[Upstash] conexão OK, ping retornou: ${pong}`));
-      } else {
-        console.warn(chalk.yellow('[Upstash] não validou conexão, mas segue tentando.'));
-      }
-      const store = new UpstashRedisStore({
-        url: UPSTASH_REDIS_REST_URL,
-        token: UPSTASH_REDIS_REST_TOKEN,
-      });
-      authStrategy = new RemoteAuth({
-        clientId: 'anderson-bot',
-        store,
-        backupSyncIntervalMs: 120000,
-      });
-      console.log(chalk.green('Usando RemoteAuth com Upstash Redis.'));
-    } catch (e) {
-        console.error(chalk.red('Falha CRÍTICA ao conectar ao Redis. O bot não pode iniciar.'), e);
-        // AJUSTE: Não cair para LocalAuth, apenas falhar.
-        // LocalAuth não funciona no ambiente do Render.
-        throw new Error("Não foi possível conectar ao Redis, encerrando.");
+
+  try {
+    const testRedis = new Redis({
+      url: UPSTASH_REDIS_REST_URL,
+      token: UPSTASH_REDIS_REST_TOKEN,
+    });
+    const pong = await testRedis.ping().catch((e) => {
+      console.warn(chalk.yellow('[Upstash] ping falhou:'), e.message || e);
+      return null;
+    });
+    if (pong) {
+      console.log(chalk.green(`[Upstash] conexão OK, ping retornou: ${pong}`));
+    } else {
+      console.warn(chalk.yellow('[Upstash] não validou conexão, mas segue tentando.'));
     }
-  } else {
-      // Este bloco se torna praticamente inalcançável, mas o mantemos por segurança.
-      throw new Error("Configuração para não usar Upstash não é permitida neste ambiente.");
+
+    const store = new UpstashRedisStore({
+      url: UPSTASH_REDIS_REST_URL,
+      token: UPSTASH_REDIS_REST_TOKEN,
+    });
+    authStrategy = new RemoteAuth({
+      clientId: 'anderson-bot',
+      store,
+      backupSyncIntervalMs: 120000,
+    });
+    console.log(chalk.green('Usando RemoteAuth com Upstash Redis.'));
+  } catch (e) {
+    console.error(chalk.red('Falha CRÍTICA ao conectar ao Redis. O bot não pode iniciar.'), e);
+    throw new Error("Não foi possível conectar ao Redis, encerrando.");
   }
 
   const clientOpts = {
@@ -290,6 +282,7 @@ async function createClient(usePinned) {
       ],
     },
   };
+
   if (usePinned) {
     clientOpts.webVersionCache = {
       type: 'remote',
@@ -297,7 +290,9 @@ async function createClient(usePinned) {
       strict: false,
     };
   }
+
   const client = new Client(clientOpts);
+
   async function cleanExit(reason) {
     try {
       console.log(chalk.yellow('Encerrando cliente WhatsApp...'), reason || '');
@@ -305,6 +300,7 @@ async function createClient(usePinned) {
     } catch (_) {}
     process.exit(0);
   }
+
   process.on('SIGINT', () => cleanExit('SIGINT'));
   process.on('SIGTERM', () => cleanExit('SIGTERM'));
   process.on('uncaughtException', (err) => {
@@ -315,32 +311,40 @@ async function createClient(usePinned) {
     console.error(chalk.red('Unhandled Rejection:'), reason);
     cleanExit('unhandledRejection');
   });
+
   client.on('qr', (qr) => {
     console.log(chalk.blueBright('QR code gerado (escaneie com o WhatsApp):'));
     qrcode.generate(qr, { small: true });
   });
+
   client.on('ready', () => {
     console.log(chalk.green('Client is ready!'));
   });
+
   client.on('message', async (message) => {
     console.log(chalk.blueBright('--- novo evento de message ---'));
     console.log(chalk.gray(`isGroup? ${message.from}, body: "${message.body}", mentionedIds: ${JSON.stringify(message.mentionedIds)}`));
+
     try {
       if (message.body === '!ping') {
         console.log('Recebeu !ping, respondendo pong.');
         await message.reply('pong!');
         return;
       }
+
       if (coldStart) {
         await message.reply('⚙️  Aguarde enquanto meu servidor está carregando…');
         coldStart = false;
       }
+
       const chatId = message.from;
       const userId = message.author || chatId;
       const sessionKey = `${chatId}:${userId}`;
+
       if (!conversationHistory[sessionKey]) {
         conversationHistory[sessionKey] = { name: '', history: [] };
       }
+
       let chatName = null;
       let isGroup = false;
       try {
@@ -352,14 +356,17 @@ async function createClient(usePinned) {
       } catch (e) {
         console.warn(chalk.yellow('Não conseguiu obter chat info:'), e.message || e);
       }
+
       const contact = await message.getContact();
       const userName = contact.pushname || contact.verifiedName || message.from;
       conversationHistory[sessionKey].name = userName;
+
       let shouldRespond = true;
       if (isGroup) {
         const botId = client.info?.wid?._serialized;
         const isMentioned = message.mentionedIds?.includes(botId);
         console.log(chalk.gray(`   Mensagem em grupo. Mencionado? ${isMentioned}`));
+
         if (!isMentioned) {
           if (USE_LOCAL_HEURISTIC && localHeuristicTrigger(message.body)) {
             console.log(chalk.gray('   Heurística local disparou, respondendo sem classificador.'));
@@ -375,8 +382,10 @@ async function createClient(usePinned) {
           }
         }
       }
+
       const responseMessage = await processMessage(message.body, sessionKey, userName, chatName);
       console.log(chalk.green(`   Resposta gerada: "${responseMessage}"`));
+
       const replyOptions = {};
       if (isGroup) {
         replyOptions.mentions = [contact];
@@ -384,6 +393,7 @@ async function createClient(usePinned) {
       } else {
         await message.reply(responseMessage);
       }
+
       console.log(chalk.green('   ✔ Resposta enviada com sucesso!'));
     } catch (err) {
       console.error(chalk.red('⚠ Erro no handler de mensagem:'), err);
@@ -392,6 +402,7 @@ async function createClient(usePinned) {
       } catch (_) {}
     }
   });
+
   try {
     await client.initialize();
     return client;
@@ -404,14 +415,13 @@ async function createClient(usePinned) {
   }
 }
 
-// --- AJUSTE: Ponto de entrada modificado ---
+// --- PONTO DE ENTRADA MODIFICADO PARA O RENDER.COM ---
 
-// 1. Inicia o servidor web para o Render não reclamar
+// 1. Inicia o servidor web para o Render não reclamar da porta
 const app = express();
-const PORT = process.env.PORT || 3000; // Render define a porta via process.env.PORT
+const PORT = process.env.PORT || 3000;
 
 app.get('/', (req, res) => {
-  // Rota simples que apenas responde que o serviço está no ar.
   res.status(200).send('Servidor do Bot está ativo. Cliente WhatsApp rodando em segundo plano.');
 });
 
@@ -419,16 +429,12 @@ app.listen(PORT, () => {
   console.log(chalk.green(`Servidor web de health check rodando na porta ${PORT}.`));
 });
 
-
-// 2. Inicia o bot do WhatsApp em segundo plano
+// 2. Inicia o bot do WhatsApp (seu código original) em segundo plano
 (async () => {
   console.log(chalk.blueBright('Iniciando o bot do WhatsApp...'));
   try {
     await createClient(true);
   } catch (e) {
     console.error(chalk.red('Falha crítica ao inicializar o client do WhatsApp:'), e);
-    // AJUSTE: Não encerramos o processo aqui. Se o bot falhar, o servidor web
-    // continua rodando, o que permite que você veja os logs de erro no Render.
-    // process.exit(1);
   }
 })();

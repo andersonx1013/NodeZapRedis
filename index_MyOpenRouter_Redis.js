@@ -347,10 +347,8 @@ async function createClient(usePinned) {
         const responseMessage = await processMessage(message.body, sessionKey, userName, chat.name);
         
         if (chat.isGroup) {
-          // <<< AQUI ESTÁ A CORREÇÃO DEFINITIVA >>>
-          // Deixa a biblioteca do WhatsApp cuidar da menção.
-          // A gente só passa o texto da resposta e o objeto do contato.
-          await message.reply(responseMessage, { mentions: [contact] });
+          const chat_id = chat.id._serialized;
+          await client.sendMessage(chat_id, `@${contact.id.user} ${responseMessage}`, { mentions: [contact] });
         } else {
           await message.reply(responseMessage);
         }

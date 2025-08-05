@@ -310,11 +310,32 @@ async function processMessage(text, sessionKey, userName, chatName) {
 }
 
 class UpstashRedisStore {
-    constructor({ url, token }) { this.redis = new Redis({ url, token }); }
-    async sessionExists({ session }) { return (await this.redis.get(`remoteauth:${session}`)) !== null; }
-    async save({ session }) { /* ... */ }
-    async extract({ session, path }) { await fs.writeFile(path, Buffer.from(await this.redis.get(`remoteauth:${session}`), 'base64')); }
-    async delete({ session }) { await this.redis.del(`remoteauth:${session}`); }
+    constructor({ url, token }) {
+        this.redis = new Redis({ url, token });
+    }
+
+    async sessionExists({ session }) {
+        const v = await this.redis.get(`remoteauth:${session}`);
+        return v !== null;
+    }
+
+    async save({ session }) {
+        const zipName = `${session}.zip`;
+        const buf = await fs.readFile(zipName);
+        const b64 = buf.toString('base64');
+        await this.redis.set(`remoteauth:${session}`, b64);
+    }
+
+    async extract({ session, path }) {
+        const b64 = await this.redis.get(`remoteauth:${session}`);
+        if (b64) {
+            await fs.writeFile(path, Buffer.from(b64, 'base64'));
+        }
+    }
+
+    async delete({ session }) {
+        await this.redis.del(`remoteauth:${session}`);
+    }
 }
 
 async function createClient(usePinned) {
@@ -341,7 +362,7 @@ async function createClient(usePinned) {
   if (await authStrategy.store.sessionExists({session: 'anderson-bot'})) {
       updateProgress('session', 'success', 'Sessão encontrada! Iniciando restauração...');
   } else {
-      updateProgress('session', 'success', 'Nenhuma sessão encontrada. Será necessário escanear o QR Code.');
+      updateProgress('session', 'success', 'Nenhuma sessão encontrada. Prepare-se para escanear o QR Code.');
   }
 
   client.on('qr', (qr) => {
@@ -372,36 +393,38 @@ async function createClient(usePinned) {
         await message.reply('⚙️ Servidor carregado. Estou pronto!');
         coldStart = false;
       }
-      const chatId = message.from;
-      const userId = message.author || chatId;
-      const sessionKey = `${chatId}:${userId}`;
+      
       const chat = await message.getChat();
       const contact = await message.getContact();
       const userName = contact.pushname || contact.verifiedName || message.from;
-      
-      let shouldRespond = !chat.isGroup;
-      if (chat.isGroup) {
-        const isMentioned = message.mentionedIds.includes(client.info.wid._serialized);
-        const triggered = USE_LOCAL_HEURISTIC && localHeuristicTrigger(message.body);
-        if (isMentioned || triggered) {
-          shouldRespond = true;
-        } else {
-          const context = buildContextSnippet(conversationHistory[sessionKey]?.history);
-          shouldRespond = await analyzeIfMessageIsForAI(message.body, context);
-        }
+      const chatId = message.from;
+      const userId = message.author || chatId;
+      const sessionKey = `${chatId}:${userId}`;
+
+      let shouldRespond = false;
+      if (!chat.isGroup) {
+        shouldRespond = true;
+      } else {
+        const context = buildContextSnippet(conversationHistory[sessionKey]?.history);
+        shouldRespond = await analyzeIfMessageIsForAI(message.body, context);
       }
 
       if (shouldRespond) {
         const responseMessage = await processMessage(message.body, sessionKey, userName, chat.name);
+        
         if (chat.isGroup) {
-          await message.reply(`@${contact.id.user} ${responseMessage}`, { mentions: [contact] });
+          await message.reply(responseMessage, { mentions: [contact] });
         } else {
           await message.reply(responseMessage);
         }
       }
     } catch (err) {
       console.error(chalk.red('⚠ Erro no handler de mensagem:'), err);
-      try { await message.reply('Desculpe, ocorreu um erro.'); } catch (_) {}
+      try {
+          await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem.');
+      } catch (_) {
+          // Ignora erro se não conseguir nem enviar a mensagem de erro
+      }
     }
   });
 
@@ -416,6 +439,7 @@ async function createClient(usePinned) {
   return client;
 }
 
+// --- LÓGICA DE INICIALIZAÇÃO ---
 server.listen(PORT, async () => {
     updateProgress('server', 'success', 'Servidor web iniciado e aguardando o bot...');
     console.log(chalk.green(`Servidor rodando na porta ${PORT}.`));
@@ -425,5 +449,6 @@ server.listen(PORT, async () => {
       await createClient(true);
     } catch (e) {
       console.error(chalk.red(e));
+      // A própria etapa que falhou já terá atualizado o status na página web
     }
 });

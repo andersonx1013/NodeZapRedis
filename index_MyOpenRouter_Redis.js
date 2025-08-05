@@ -3,9 +3,9 @@
 // --- dependências ---
 const os = require('os');
 const path = require('path');
-const http = require('http'); // Adicionado para integrar Express e Socket.IO
+const http = require('http');
 const express = require('express');
-const { Server } = require("socket.io"); // Adicionado Socket.IO
+const { Server } = require("socket.io");
 const { Client, LocalAuth, RemoteAuth } = require('whatsapp-web.js');
 const { Redis } = require('@upstash/redis');
 const fs = require('fs/promises');
@@ -38,11 +38,12 @@ const PORT = process.env.PORT || 3000;
 
 let statusLog = ["Aguardando início do servidor..."];
 
-// Função para emitir status para o console e para a página web
 function emitStatus(message) {
   console.log(chalk.cyan(`[STATUS WEB] → ${message}`));
   statusLog.push(message);
-  if (statusLog.length > 20) statusLog.shift();
+  if (statusLog.length > 20) {
+      statusLog.shift();
+  }
   io.emit('statusUpdate', message);
 }
 
@@ -57,8 +58,8 @@ const statusPageHtml = `
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Roboto+Mono:wght@400&display=swap');
         body {
-            background-color: #0d1117; /* Cor de fundo do GitHub Dark */
-            color: #c9d1d9; /* Cor do texto */
+            background-color: #0d1117;
+            color: #c9d1d9;
             font-family: 'Roboto Mono', monospace;
             display: flex;
             justify-content: center;
@@ -76,46 +77,36 @@ const statusPageHtml = `
         h1 {
             font-family: 'Montserrat', sans-serif;
             font-weight: 700;
-            font-size: 5rem; /* <<< FONTE DO TÍTULO BEM GRANDE */
-            color: #58a6ff; /* Azul do GitHub */
+            font-size: 5rem;
+            color: #58a6ff;
             margin-bottom: 40px;
             text-shadow: 0 0 10px rgba(88, 166, 255, 0.3);
         }
         #status-message {
-            font-size: 3rem; /* <<< FONTE DO STATUS PRINCIPAL BEM GRANDE */
+            font-size: 3rem;
             line-height: 1.4;
             background-color: #161b22;
             padding: 40px;
             border-radius: 12px;
-            border-left: 8px solid #3fb950; /* Verde do GitHub */
+            border-left: 8px solid #3fb950;
             min-height: 100px;
             word-wrap: break-word;
             transition: all 0.3s ease;
         }
         #status-message.error {
-            border-left-color: #f85149; /* Vermelho do GitHub */
+            border-left-color: #f85149;
         }
         #status-message.ready {
-            border-left-color: #a371f7; /* Roxo do GitHub */
+            border-left-color: #a371f7;
             color: #fff;
         }
-        /* Responsividade para telas menores */
         @media (max-width: 768px) {
-            h1 {
-                font-size: 3.5rem; /* Ajuste para mobile */
-            }
-            #status-message {
-                font-size: 2rem; /* Ajuste para mobile */
-                padding: 25px;
-            }
+            h1 { font-size: 3.5rem; }
+            #status-message { font-size: 2rem; padding: 25px; }
         }
-         @media (max-width: 480px) {
-            h1 {
-                font-size: 2.5rem; /* Ajuste ainda menor */
-            }
-            #status-message {
-                font-size: 1.5rem; /* Ajuste ainda menor */
-            }
+        @media (max-width: 480px) {
+            h1 { font-size: 2.5rem; }
+            #status-message { font-size: 1.5rem; }
         }
     </style>
 </head>
@@ -128,23 +119,17 @@ const statusPageHtml = `
     <script>
         const socket = io();
         const statusDiv = document.getElementById('status-message');
-        
         socket.on('statusUpdate', (message) => {
             statusDiv.textContent = message;
             statusDiv.classList.remove('error', 'ready');
             const lowerCaseMessage = message.toLowerCase();
             if (lowerCaseMessage.includes('erro') || lowerCaseMessage.includes('falha')) {
                 statusDiv.classList.add('error');
-            } else if (lowerCaseMessage.includes('pronto') || lowerCaseMessage.includes('operacional')) {
+            } else if (lowerCaseMessage.includes('pronto e online') || lowerCaseMessage.includes('operacional')) {
                 statusDiv.classList.add('ready');
             }
         });
-
-        // Pede o histórico ao se conectar para pegar o último status
-        socket.on('connect', () => { 
-            socket.emit('requestHistory'); 
-        });
-
+        socket.on('connect', () => { socket.emit('requestHistory'); });
         socket.on('history', (history) => {
              if (history && history.length > 0) {
                  statusDiv.textContent = history[history.length - 1];
@@ -154,19 +139,14 @@ const statusPageHtml = `
 </body>
 </html>
 `;
-
-// Rota principal que serve a página HTML
 app.get('/', (req, res) => {
-  res.send(statusPageHtml);
+    res.send(statusPageHtml);
 });
 
-// Lida com novas conexões de socket
 io.on('connection', (socket) => {
-  // Envia o histórico de logs para um cliente que acabou de conectar
   socket.on('requestHistory', () => {
-    socket.emit('history', statusLog);
+      socket.emit('history', statusLog);
   });
-  // Também envia imediatamente ao conectar
   socket.emit('history', statusLog);
 });
 
@@ -178,11 +158,9 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_BASE_URL = 'https://myopenrouter.onrender.com/api/v1';
 const MODEL = 'qwen/qwen3-coder:free';
 const SKIP_CLASSIFICATION = !!process.env.SKIP_CLASSIFICATION;
-const USE_LOCAL_HEURISTIC = process.env.USE_LOCAL_HEURISTIC !== '0';
+const USE_LOCAL_HEURISTIC = process.env.USE_LOCAL_HEURistic !== '0';
 const conversationHistory = {};
 let coldStart = true;
-
-// system prompt (SEU TEXTO COMPLETO E INTACTO)
 const systemMessage = `
 🚫 NÃO forneça exemplos de código, trechos \`\`\`, comandos de terminal ou descrições técnicas de programação, a menos que o usuário peça explicitamente. Quando o assunto for programação sem pedido de código, responda em linguagem natural, sem mostrar sintaxe. Remova qualquer bloco de código se o usuário não solicitou.
 
@@ -199,40 +177,40 @@ async function wakeUpApi() {
     if (error.code === 'ECONNABORTED') {
       emitStatus("API de IA está acordando (timeout é normal).");
     } else {
-      emitStatus(`Aviso: Ping para API falhou, mas o bot continuará. Erro: ${error.message}`);
+      emitStatus(`Aviso: Ping para API falhou: ${error.message}`);
     }
   }
 }
 
-/** TODAS AS SUAS FUNÇÕES ORIGINAIS E INTACTAS **/
 function getFormattedMessages(history) {
   return history.map(m => ({ role: m.role, content: m.content }));
 }
 
 function buildContextSnippet(history, maxMessages = 3) {
-  if (!history || history.length === 0) return '';
+  if (!history || history.length === 0) {
+      return '';
+  }
   const userMsgs = history.filter(m => m.role === 'user');
   const last = userMsgs.slice(-maxMessages);
   return last.map(m => m.content).join(' | ');
 }
 
 function userAskedForCode(text) {
-  if (!text) return false;
+  if (!text) {
+      return false;
+  }
   const patterns = [
-    /mostre o código/i,
-    /exemplo de código/i,
-    /me d[eé] o código/i,
-    /me mostre o código/i,
-    /código por favor/i,
-    /preciso do código/i,
-    /snippet/i,
-    /trecho de código/i,
+    /mostre o código/i, /exemplo de código/i, /me d[eé] o código/i,
+    /me mostre o código/i, /código por favor/i, /preciso do código/i,
+    /snippet/i, /trecho de código/i,
   ];
   return patterns.some(rx => rx.test(text));
 }
 
 function sanitizeReply(reply, userWantedCode) {
-  if (userWantedCode) return reply;
+  if (userWantedCode) {
+      return reply;
+  }
   let sanitized = reply.replace(/```[\s\S]*?```/g, '[código ocultado]');
   sanitized = sanitized.replace(/~~~[\s\S]*?~~~/g, '[código ocultado]');
   sanitized = sanitized.replace(/`([^`]+)`/g, '[código ocultado]');
@@ -240,7 +218,9 @@ function sanitizeReply(reply, userWantedCode) {
 }
 
 function localHeuristicTrigger(text) {
-  if (!text) return false;
+  if (!text) {
+      return false;
+  }
   const trimmed = text.trim();
   return /^\/bot\b/i.test(trimmed) || /^anderson[:\s]/i.test(trimmed);
 }
@@ -268,10 +248,7 @@ Mensagem: "${text}"
         messages: [{ role: 'user', content: classificationPrompt }],
       },
       {
-        headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
+        headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
         timeout: 15000,
       }
     );
@@ -279,7 +256,7 @@ Mensagem: "${text}"
     console.log(chalk.magenta(`   Classificador retornou: "${resultRaw.replace(/\n/g, ' ')}"`));
     return /^sim$/i.test(resultRaw.trim());
   } catch (error) {
-    console.error(chalk.red('Erro ao classificar mensagem:'), error.response?.data || error.message || error);
+    console.error(chalk.red('Erro ao classificar mensagem:'), error.message);
     return false;
   }
 }
@@ -304,17 +281,8 @@ async function processMessage(text, sessionKey, userName, chatName) {
     console.log(chalk.cyan('   Enviando requisição para OpenRouter...'));
     const response = await axios.post(
       `${OPENROUTER_BASE_URL}/chat/completions`,
-      {
-        model: MODEL,
-        messages: messages,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 20000,
-      }
+      { model: MODEL, messages: messages },
+      { headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}` }, timeout: 20000 }
     );
     let reply = response.data.choices?.[0]?.message?.content?.trim() || '';
     console.log(chalk.cyan(`   OpenRouter respondeu (bruto): "${reply}"`));
@@ -322,44 +290,41 @@ async function processMessage(text, sessionKey, userName, chatName) {
     conversationHistory[sessionKey].history.push({ role: 'assistant', content: reply });
     return reply;
   } catch (error) {
-    console.error(chalk.red('Erro ao processar mensagem:'), error.response?.data || error.message || error);
+    console.error(chalk.red('Erro ao processar mensagem:'), error.message);
     return 'Desculpe, não consegui processar sua mensagem.';
   }
 }
 
-// --- UpstashRedisStore MODIFICADO para emitir status ---
 class UpstashRedisStore {
   constructor({ url, token }) {
     this.redis = new Redis({ url, token });
   }
+
   async sessionExists({ session }) {
-    emitStatus(`Verificando sessão no Redis...`);
+    console.log(`[Redis] Verificando sessão "${session}"...`);
     const v = await this.redis.get(`remoteauth:${session}`);
-    const exists = v !== null;
-    emitStatus(`Sessão ${exists ? 'encontrada!' : 'não encontrada.'}`);
-    return exists;
+    return v !== null;
   }
+
   async save({ session }) {
     const zipName = `${session}.zip`;
-    emitStatus(`Salvando sessão no Redis...`);
+    emitStatus(`Atualizando sessão no Redis...`);
     const buf = await fs.readFile(zipName);
     const b64 = buf.toString('base64');
     await this.redis.set(`remoteauth:${session}`, b64);
-    emitStatus(`Sessão salva com sucesso.`);
+    emitStatus(`Sessão salva no Redis.`);
   }
+
   async extract({ session, path }) {
-    emitStatus(`Restaurando sessão do Redis...`);
     const b64 = await this.redis.get(`remoteauth:${session}`);
     if (!b64) {
-      emitStatus(`Nenhuma sessão encontrada para restaurar.`);
-      return;
+        return;
     }
     const buf = Buffer.from(b64, 'base64');
     await fs.writeFile(path, buf);
-    emitStatus(`Sessão restaurada com sucesso!`);
   }
+
   async delete({ session }) {
-    emitStatus(`Deletando sessão do Redis...`);
     await this.redis.del(`remoteauth:${session}`);
   }
 }
@@ -369,9 +334,8 @@ async function createClient(usePinned) {
   try {
     emitStatus("Configurando autenticação remota...");
     const store = new UpstashRedisStore({ url: UPSTASH_REDIS_REST_URL, token: UPSTASH_REDIS_REST_TOKEN });
-    const pong = await store.redis.ping().catch(() => null);
-    if(pong) emitStatus("Conexão com Redis confirmada.");
-    
+    await store.redis.ping();
+    emitStatus("Conexão com Redis confirmada.");
     authStrategy = new RemoteAuth({ clientId: 'anderson-bot', store, backupSyncIntervalMs: 120000 });
   } catch (e) {
     emitStatus(`ERRO CRÍTICO ao conectar ao Redis: ${e.message}`);
@@ -383,20 +347,19 @@ async function createClient(usePinned) {
     puppeteer: { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] },
     webVersionCache: usePinned ? { type: 'remote', remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html' } : undefined,
   });
-  
-  // Handlers de eventos do cliente
+
   client.on('qr', (qr) => {
-    emitStatus("QR Code gerado! Escaneie no terminal para conectar.");
+    emitStatus("QR Code gerado! Escaneie no terminal.");
     qrcode.generate(qr, { small: true });
   });
 
   client.on('ready', () => {
-    emitStatus("Tudo pronto! Bot está operacional.");
+    emitStatus("Bot está pronto e online!");
     console.log(chalk.green('Client is ready!'));
   });
-  
+
   client.on('auth_failure', (msg) => {
-      emitStatus(`ERRO DE AUTENTICAÇÃO: ${msg}. A sessão é inválida.`);
+      emitStatus(`ERRO DE AUTENTICAÇÃO: ${msg}`);
   });
   
   client.on('disconnected', (reason) => {
@@ -404,18 +367,14 @@ async function createClient(usePinned) {
   });
 
   client.on('message', async (message) => {
-    console.log(chalk.blueBright('--- novo evento de message ---'));
-    console.log(chalk.gray(`isGroup? ${message.from}, body: "${message.body}", mentionedIds: ${JSON.stringify(message.mentionedIds)}`));
-
     try {
       if (message.body === '!ping') {
-        console.log('Recebeu !ping, respondendo pong.');
         await message.reply('pong!');
         return;
       }
 
       if (coldStart) {
-        await message.reply('⚙️  Aguarde enquanto meu servidor está carregando…');
+        await message.reply('⚙️ Servidor carregado. Estou pronto!');
         coldStart = false;
       }
 
@@ -423,75 +382,48 @@ async function createClient(usePinned) {
       const userId = message.author || chatId;
       const sessionKey = `${chatId}:${userId}`;
 
-      if (!conversationHistory[sessionKey]) {
-        conversationHistory[sessionKey] = { name: '', history: [] };
-      }
-
-      let chatName = null;
-      let isGroup = false;
-      try {
-        const chat = await message.getChat();
-        if (chat.isGroup) {
-          isGroup = true;
-          chatName = chat.name;
-        }
-      } catch (e) {
-        console.warn(chalk.yellow('Não conseguiu obter chat info:'), e.message || e);
-      }
-
+      const chat = await message.getChat();
       const contact = await message.getContact();
       const userName = contact.pushname || contact.verifiedName || message.from;
-      conversationHistory[sessionKey].name = userName;
 
-      let shouldRespond = true;
-      if (isGroup) {
-        const botId = client.info?.wid?._serialized;
-        const isMentioned = message.mentionedIds?.includes(botId);
-        console.log(chalk.gray(`   Mensagem em grupo. Mencionado? ${isMentioned}`));
+      let shouldRespond = !chat.isGroup;
 
-        if (!isMentioned) {
-          if (USE_LOCAL_HEURISTIC && localHeuristicTrigger(message.body)) {
-            console.log(chalk.gray('   Heurística local disparou, respondendo sem classificador.'));
-            shouldRespond = true;
-          } else {
-            const contextSnippet = buildContextSnippet(conversationHistory[sessionKey].history, 3);
-            shouldRespond = await analyzeIfMessageIsForAI(message.body, contextSnippet);
-            console.log(chalk.gray(`   analyzeIfMessageIsForAI → ${shouldRespond}`));
-            if (!shouldRespond) {
-              console.log(chalk.yellow('   → Ignorando mensagem (não era para a IA).'));
-              return;
-            }
-          }
+      if (chat.isGroup) {
+        const isMentioned = message.mentionedIds.includes(client.info.wid._serialized);
+        const triggeredByHeuristic = USE_LOCAL_HEURISTIC && localHeuristicTrigger(message.body);
+
+        if (isMentioned || triggeredByHeuristic) {
+          shouldRespond = true;
+        } else {
+          const context = buildContextSnippet(conversationHistory[sessionKey]?.history);
+          shouldRespond = await analyzeIfMessageIsForAI(message.body, context);
         }
       }
 
-      const responseMessage = await processMessage(message.body, sessionKey, userName, chatName);
-      console.log(chalk.green(`   Resposta gerada: "${responseMessage}"`));
-
-      const replyOptions = {};
-      if (isGroup) {
-        replyOptions.mentions = [contact];
-        await message.reply(`@${contact.id.user} ${responseMessage}`, replyOptions);
-      } else {
-        await message.reply(responseMessage);
+      if (shouldRespond) {
+        const responseMessage = await processMessage(message.body, sessionKey, userName, chat.name);
+        if (chat.isGroup) {
+          await message.reply(`@${contact.id.user} ${responseMessage}`, { mentions: [contact] });
+        } else {
+          await message.reply(responseMessage);
+        }
       }
-
-      console.log(chalk.green('   ✔ Resposta enviada com sucesso!'));
     } catch (err) {
       console.error(chalk.red('⚠ Erro no handler de mensagem:'), err);
       try {
-        await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem.');
-      } catch (_) {}
+          await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem.');
+      } catch (e) {
+          console.error(chalk.red('Falha ao enviar mensagem de erro.'), e);
+      }
     }
   });
 
-  // Inicialização do cliente
   try {
-    emitStatus("Iniciando cliente WhatsApp...");
+    emitStatus("Iniciando WhatsApp e restaurando sessão...");
     await client.initialize();
     return client;
   } catch (err) {
-    emitStatus(`Aviso: Inicialização falhou. Tentando novamente...`);
+    emitStatus(`Inicialização falhou. Tentando de novo...`);
     if (usePinned) {
         return createClient(false);
     }
@@ -499,17 +431,14 @@ async function createClient(usePinned) {
   }
 }
 
-
-// --- LÓGICA DE INICIALIZAÇÃO DO BOT ---
 server.listen(PORT, async () => {
-    emitStatus("Servidor web iniciado. Começando a inicialização do bot...");
-    console.log(chalk.green(`Servidor web de health check rodando na porta ${PORT}.`));
-    
+    emitStatus("Servidor web iniciado...");
+    console.log(chalk.green(`Servidor rodando na porta ${PORT}.`));
     try {
       await wakeUpApi();
       await createClient(true);
     } catch (e) {
-      const errorMsg = `ERRO CRÍTICO ao inicializar o bot: ${e.message}`;
+      const errorMsg = `ERRO CRÍTICO: ${e.message}`;
       emitStatus(errorMsg);
       console.error(chalk.red(errorMsg), e);
     }

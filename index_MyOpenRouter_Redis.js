@@ -1,27 +1,24 @@
 'use strict';
 
-// --- ajustes de ambiente e compatibilidade ---
+// --- dependências ---
 const os = require('os');
 const path = require('path');
-
-// evita locks no chrome debug log
-process.env.CHROME_LOG_FILE = path.join(os.tmpdir(), 'wweb_chrome_debug.log');
-
-// shim opcional de punycode (deprecated warning)
-try { require('punycode'); } catch (_) { /* sem shim, warning é inofensivo */ }
-
-const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
-if (nodeMajor >= 21) {
-  console.warn(`Você está rodando Node.js v${process.versions.node}. O aviso sobre punycode ([DEP0040]) é esperado e pode ser ignorado ou mitigado com um shim.`);
-}
-
-// --- dependências ---
+const http = require('http'); // Adicionado para integrar Express e Socket.IO
+const express = require('express');
+const { Server } = require("socket.io"); // Adicionado Socket.IO
 const { Client, LocalAuth, RemoteAuth } = require('whatsapp-web.js');
 const { Redis } = require('@upstash/redis');
 const fs = require('fs/promises');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
-const express = require('express');
+
+// --- ajustes de ambiente ---
+process.env.CHROME_LOG_FILE = path.join(os.tmpdir(), 'wweb_chrome_debug.log');
+try { require('punycode'); } catch (_) { /* shim opcional */ }
+const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
+if (nodeMajor >= 21) {
+  console.warn(`Node.js v${process.versions.node} detectado. O aviso sobre punycode é esperado.`);
+}
 
 // chalk para logs com fallback
 let chalk;
@@ -29,35 +26,160 @@ try {
   chalk = require('chalk');
   if (chalk && chalk.default) chalk = chalk.default;
 } catch (_) {
-  chalk = {
-    red: (s) => s,
-    green: (s) => s,
-    yellow: (s) => s,
-    blueBright: (s) => s,
-    magenta: (s) => s,
-    cyan: (s) => s,
-    gray: (s) => s,
-  };
+  chalk = { red: s => s, green: s => s, yellow: s => s, blueBright: s => s, magenta: s => s, cyan: s => s, gray: s => s };
 }
 
-// --- configurações ---
-// Upstash Redis hardcoded conforme você forneceu
+
+// --- PONTO DE ENTRADA E SERVIDOR WEB COM STATUS EM TEMPO REAL ---
+const app = express();
+const server = http.createServer(app);
+const io = new Server(server);
+const PORT = process.env.PORT || 3000;
+
+let statusLog = ["Aguardando início do servidor..."];
+
+// Função para emitir status para o console e para a página web
+function emitStatus(message) {
+  console.log(chalk.cyan(`[STATUS WEB] → ${message}`));
+  statusLog.push(message);
+  if (statusLog.length > 20) statusLog.shift();
+  io.emit('statusUpdate', message);
+}
+
+// --- PÁGINA HTML COM CSS PARA FONTES GRANDES ---
+const statusPageHtml = `
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Status do Bot</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Roboto+Mono:wght@400&display=swap');
+        body {
+            background-color: #0d1117; /* Cor de fundo do GitHub Dark */
+            color: #c9d1d9; /* Cor do texto */
+            font-family: 'Roboto Mono', monospace;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            padding: 15px;
+            box-sizing: border-box;
+            text-align: center;
+        }
+        .container {
+            max-width: 1200px;
+            width: 100%;
+        }
+        h1 {
+            font-family: 'Montserrat', sans-serif;
+            font-weight: 700;
+            font-size: 5rem; /* <<< FONTE DO TÍTULO BEM GRANDE */
+            color: #58a6ff; /* Azul do GitHub */
+            margin-bottom: 40px;
+            text-shadow: 0 0 10px rgba(88, 166, 255, 0.3);
+        }
+        #status-message {
+            font-size: 3rem; /* <<< FONTE DO STATUS PRINCIPAL BEM GRANDE */
+            line-height: 1.4;
+            background-color: #161b22;
+            padding: 40px;
+            border-radius: 12px;
+            border-left: 8px solid #3fb950; /* Verde do GitHub */
+            min-height: 100px;
+            word-wrap: break-word;
+            transition: all 0.3s ease;
+        }
+        #status-message.error {
+            border-left-color: #f85149; /* Vermelho do GitHub */
+        }
+        #status-message.ready {
+            border-left-color: #a371f7; /* Roxo do GitHub */
+            color: #fff;
+        }
+        /* Responsividade para telas menores */
+        @media (max-width: 768px) {
+            h1 {
+                font-size: 3.5rem; /* Ajuste para mobile */
+            }
+            #status-message {
+                font-size: 2rem; /* Ajuste para mobile */
+                padding: 25px;
+            }
+        }
+         @media (max-width: 480px) {
+            h1 {
+                font-size: 2.5rem; /* Ajuste ainda menor */
+            }
+            #status-message {
+                font-size: 1.5rem; /* Ajuste ainda menor */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Bot Status</h1>
+        <div id="status-message">Conectando...</div>
+    </div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const statusDiv = document.getElementById('status-message');
+        
+        socket.on('statusUpdate', (message) => {
+            statusDiv.textContent = message;
+            statusDiv.classList.remove('error', 'ready');
+            const lowerCaseMessage = message.toLowerCase();
+            if (lowerCaseMessage.includes('erro') || lowerCaseMessage.includes('falha')) {
+                statusDiv.classList.add('error');
+            } else if (lowerCaseMessage.includes('pronto') || lowerCaseMessage.includes('operacional')) {
+                statusDiv.classList.add('ready');
+            }
+        });
+
+        // Pede o histórico ao se conectar para pegar o último status
+        socket.on('connect', () => { 
+            socket.emit('requestHistory'); 
+        });
+
+        socket.on('history', (history) => {
+             if (history && history.length > 0) {
+                 statusDiv.textContent = history[history.length - 1];
+             }
+        });
+    </script>
+</body>
+</html>
+`;
+
+// Rota principal que serve a página HTML
+app.get('/', (req, res) => {
+  res.send(statusPageHtml);
+});
+
+// Lida com novas conexões de socket
+io.on('connection', (socket) => {
+  // Envia o histórico de logs para um cliente que acabou de conectar
+  socket.on('requestHistory', () => {
+    socket.emit('history', statusLog);
+  });
+  // Também envia imediatamente ao conectar
+  socket.emit('history', statusLog);
+});
+
+
+// --- configurações do bot ---
 const UPSTASH_REDIS_REST_URL = 'https://humorous-koi-8598.upstash.io';
 const UPSTASH_REDIS_REST_TOKEN = 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
-
-// OpenRouter (Use as variáveis de ambiente no painel do Render.com)
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_BASE_URL = 'https://myopenrouter.onrender.com/api/v1';
 const MODEL = 'qwen/qwen3-coder:free';
-
-// comportamento ajustável via env
 const SKIP_CLASSIFICATION = !!process.env.SKIP_CLASSIFICATION;
 const USE_LOCAL_HEURISTIC = process.env.USE_LOCAL_HEURISTIC !== '0';
-
-// histórico por sessão
 const conversationHistory = {};
-
-// flag para cold start (courtesy ping)
 let coldStart = true;
 
 // system prompt (SEU TEXTO COMPLETO E INTACTO)
@@ -67,45 +189,33 @@ const systemMessage = `
 Responderei somente o que o usuário quer saber de forma objetiva e descontraída e em primeira pessoa, sempre em português brasileiro. Se o usuário pedir para trocar o idioma, você pode falar em outro. Direi informações sobre o CV somente se o usuário perguntar. Só responderei coisas relacionadas ao meu currículo. Eu fui criado pelo Anderson. Eu sou o avatar de Anderson Xavier. Tenho 40 anos. Residente em São Paulo - SP, Brasil. Tenho mais de 20 anos de experiência no mercado de TI, atuando de forma multidisciplinar em processos e tecnologias. Meu contato é andersonx1013@gmail.com e (+55)16 99740-5919 (Business). Atuo como Arquiteto de Software e Líder Técnico, com vasta experiência em desenvolvimento de software e serviços, abrangendo desde o design até a implementação e otimização do ciclo de vida completo. Minhas principais habilidades técnicas incluem desenvolvimento web e mobile com NodeJS, React, React Native, JavaScript, C# (.NET Core e Desktop), Razor, WebForms, MVC e WebAPI, além de back-end e APIs com NodeJS, C#, Java e Python. Possuo expertise em cloud computing, trabalhando com AWS, GCP e Azure (DevOps), utilizando Docker e Kubernetes para orquestração e arquiteturas serverless. Tenho profundo conhecimento em bancos de dados SQL Server, PostgreSQL, Neo4J, MongoDB, Redis, Oracle, MySQL e ElasticSearch. Na área de Inteligência Artificial, Machine Learning e Data Science, trabalho com Python e R, NLP, IA, Deep Learning, modelos GPT (3 e 4), TensorFlow, PyTorch, RASA, Hugging Face, LangChain, Llama 2 e estatística com R Studio e Anaconda. Minhas competências se estendem a DevOps e infraestrutura, incluindo CI/CD, Git, servidores de aplicação como WebLogic e IIS, e virtualização com VMWare. Sou especialista em segurança, abrangendo Cryptography (RSA, AES, TLS), IAM (OAuth 2.0, Keycloak), DevSecOps (Snyk, Trivy), Pentesting (Kali, Nmap), SIEM (Splunk, Sentinel), OWASP Top 10, GDPR/LGPD e segurança de APIs e containers (JWT, Falco), além de resiliência (DDoS, WAF). Também possuo experiência com RabbitMQ, Kafka, ElasticSearch e SonarQube. Aplico metodologias ágeis como Scrum, Safe e Kanban, Design Thinking, UML, BPM, PMI, Gerenciamento de Mudanças (Germud), C4 Model e RUP. Tenho experiência em gerenciamento de equipes, recrutamento, gestão de projetos, definição de KPIs, gestão de custos (Capex/Opex), garantia da qualidade, operações, comunicação com executivos (CEOs) e formação de times. Aplico padrões de design e arquitetura como Abstract Factory, Facade, MVC, Microservices (Hexagonal, Vertical Slice, EDA) e SOA. Ao se apresentar responderei de forma objetiva e curta. Devo ficar esperto se a pessoa está me elogiando, agradecendo ou encerrando a conversa e nesse caso faço mesmo sem ficar falando do meu currículo a todo momento. Leve em conta sempre o nome da pessoa na hora de responder. Sempre levar em consideração as respostas anteriores para não responder besteira. O que você não souber a respeito do currículo dele diga que não sabe e passe o contato. Nas horas vagas gosto de estudar tecnologias emergentes, ver filmes com minha família, brincar com meu filho David e jogar jogos eletrônicos tipo Starcraft. Sou casado. Meus defeitos são que sou muito perfeccionista e ansioso. Minhas qualidades são entusiasmo e adoro ajudar pessoas a se desenvolverem tanto na vida profissional quanto pessoal. Prefiro backend a frontend. Gosto de comer pizza, arroz, feijão e ovo cozido. Notar se a mensagem é para mim com base no contexto das respostas anteriores, também indiretamente. Se alguém tirar ou fizer piadinhas comigo responderei ironicamente com uma piada.
 `;
 
-
-/**
- * >>>>>>>>>>>> NOVO BLOCO DE CÓDIGO <<<<<<<<<<<<
- * Envia um "courtesy ping" para a API para acordá-la no Render.com.
- * Isso ajuda a mitigar o tempo de cold start da API.
- */
 async function wakeUpApi() {
-  // A URL a ser "pingada" é a raiz do serviço do Render, não o endpoint /api/v1
   const apiRootUrl = OPENROUTER_BASE_URL.replace('/api/v1', '');
-  
-  console.log(chalk.blueBright(`→ Enviando ping de cortesia para acordar a API em ${apiRootUrl}...`));
+  emitStatus(`Acordando a API de IA...`);
   try {
-    // Usamos um timeout curto. Não precisamos da resposta completa,
-    // apenas garantir que a requisição foi enviada para iniciar o servidor.
     await axios.get(apiRootUrl, { timeout: 8000 });
-    console.log(chalk.green('   ✔ Ping para a API enviado com sucesso. O serviço deve estar acordando.'));
+    emitStatus("API de IA está ativa ou acordando.");
   } catch (error) {
-    // É esperado que isso possa falhar (ex: timeout), e não deve parar o bot.
-    // Apenas registramos o aviso. O serviço pode já estar ativo ou acordará na primeira chamada real.
     if (error.code === 'ECONNABORTED') {
-      console.log(chalk.yellow('   Ping para a API atingiu o timeout. Isso é normal e geralmente significa que o servidor está sendo iniciado.'));
+      emitStatus("API de IA está acordando (timeout é normal).");
     } else {
-      console.warn(chalk.yellow(`   Aviso: O ping de cortesia para a API falhou, mas o bot continuará. Erro: ${error.message}`));
+      emitStatus(`Aviso: Ping para API falhou, mas o bot continuará. Erro: ${error.message}`);
     }
   }
 }
-// >>>>>>>>>>>> FIM DO NOVO BLOCO DE CÓDIGO <<<<<<<<<<<<
-
 
 /** TODAS AS SUAS FUNÇÕES ORIGINAIS E INTACTAS **/
 function getFormattedMessages(history) {
   return history.map(m => ({ role: m.role, content: m.content }));
 }
+
 function buildContextSnippet(history, maxMessages = 3) {
   if (!history || history.length === 0) return '';
   const userMsgs = history.filter(m => m.role === 'user');
   const last = userMsgs.slice(-maxMessages);
   return last.map(m => m.content).join(' | ');
 }
+
 function userAskedForCode(text) {
   if (!text) return false;
   const patterns = [
@@ -120,6 +230,7 @@ function userAskedForCode(text) {
   ];
   return patterns.some(rx => rx.test(text));
 }
+
 function sanitizeReply(reply, userWantedCode) {
   if (userWantedCode) return reply;
   let sanitized = reply.replace(/```[\s\S]*?```/g, '[código ocultado]');
@@ -127,11 +238,13 @@ function sanitizeReply(reply, userWantedCode) {
   sanitized = sanitized.replace(/`([^`]+)`/g, '[código ocultado]');
   return sanitized;
 }
+
 function localHeuristicTrigger(text) {
   if (!text) return false;
   const trimmed = text.trim();
   return /^\/bot\b/i.test(trimmed) || /^anderson[:\s]/i.test(trimmed);
 }
+
 async function analyzeIfMessageIsForAI(text, contextSnippet = '') {
   if (SKIP_CLASSIFICATION) {
     console.log(chalk.yellow('→ SKIP_CLASSIFICATION ativo: respondendo sem análise.'));
@@ -170,10 +283,10 @@ Mensagem: "${text}"
     return false;
   }
 }
+
 async function processMessage(text, sessionKey, userName, chatName) {
   try {
     console.log(chalk.cyan(`→ processMessage para sessão ${sessionKey} (${userName})`));
-    console.log(chalk.gray('OPENROUTER_API_KEY presente?', !!OPENROUTER_API_KEY));
     if (!conversationHistory[sessionKey]) {
       conversationHistory[sessionKey] = { name: userName, history: [] };
     }
@@ -213,141 +326,81 @@ async function processMessage(text, sessionKey, userName, chatName) {
     return 'Desculpe, não consegui processar sua mensagem.';
   }
 }
+
+// --- UpstashRedisStore MODIFICADO para emitir status ---
 class UpstashRedisStore {
   constructor({ url, token }) {
     this.redis = new Redis({ url, token });
-    console.log(chalk.blueBright('Inicializando UpstashRedisStore...'));
   }
   async sessionExists({ session }) {
-    try {
-      const v = await this.redis.get(`remoteauth:${session}`);
-      const exists = v !== null;
-      console.log(chalk.green(`[RedisStore] sessionExists("${session}") → ${exists}`));
-      return exists;
-    } catch (e) {
-      console.error(chalk.red(`[RedisStore] erro em sessionExists("${session}"): `), e);
-      return false;
-    }
+    emitStatus(`Verificando sessão no Redis...`);
+    const v = await this.redis.get(`remoteauth:${session}`);
+    const exists = v !== null;
+    emitStatus(`Sessão ${exists ? 'encontrada!' : 'não encontrada.'}`);
+    return exists;
   }
   async save({ session }) {
     const zipName = `${session}.zip`;
-    try {
-      const buf = await fs.readFile(zipName);
-      const b64 = buf.toString('base64');
-      await this.redis.set(`remoteauth:${session}`, b64);
-      console.log(chalk.green(`[RedisStore] save("${session}") → gravado ${buf.length} bytes (base64 len=${b64.length})`));
-    } catch (e) {
-      console.error(chalk.red(`[RedisStore] erro em save("${session}"): `), e);
-      throw e;
-    }
+    emitStatus(`Salvando sessão no Redis...`);
+    const buf = await fs.readFile(zipName);
+    const b64 = buf.toString('base64');
+    await this.redis.set(`remoteauth:${session}`, b64);
+    emitStatus(`Sessão salva com sucesso.`);
   }
   async extract({ session, path }) {
-    try {
-      const b64 = await this.redis.get(`remoteauth:${session}`);
-      if (!b64) {
-        console.log(chalk.yellow(`[RedisStore] extract("${session}") → nada para extrair`));
-        return;
-      }
-      const buf = Buffer.from(b64, 'base64');
-      await fs.writeFile(path, buf);
-      console.log(chalk.green(`[RedisStore] extract("${session}") → restaurado para "${path}" (${buf.length} bytes)`));
-    } catch (e) {
-      console.error(chalk.red(`[RedisStore] erro em extract("${session}"): `), e);
-      throw e;
+    emitStatus(`Restaurando sessão do Redis...`);
+    const b64 = await this.redis.get(`remoteauth:${session}`);
+    if (!b64) {
+      emitStatus(`Nenhuma sessão encontrada para restaurar.`);
+      return;
     }
+    const buf = Buffer.from(b64, 'base64');
+    await fs.writeFile(path, buf);
+    emitStatus(`Sessão restaurada com sucesso!`);
   }
   async delete({ session }) {
-    try {
-      await this.redis.del(`remoteauth:${session}`);
-      console.log(chalk.green(`[RedisStore] delete("${session}") → removido`));
-    } catch (e) {
-      console.error(chalk.red(`[RedisStore] erro em delete("${session}"): `), e);
-    }
+    emitStatus(`Deletando sessão do Redis...`);
+    await this.redis.del(`remoteauth:${session}`);
   }
 }
+
 async function createClient(usePinned) {
   let authStrategy;
-
   try {
-    const testRedis = new Redis({
-      url: UPSTASH_REDIS_REST_URL,
-      token: UPSTASH_REDIS_REST_TOKEN,
-    });
-    const pong = await testRedis.ping().catch((e) => {
-      console.warn(chalk.yellow('[Upstash] ping falhou:'), e.message || e);
-      return null;
-    });
-    if (pong) {
-      console.log(chalk.green(`[Upstash] conexão OK, ping retornou: ${pong}`));
-    } else {
-      console.warn(chalk.yellow('[Upstash] não validou conexão, mas segue tentando.'));
-    }
-
-    const store = new UpstashRedisStore({
-      url: UPSTASH_REDIS_REST_URL,
-      token: UPSTASH_REDIS_REST_TOKEN,
-    });
-    authStrategy = new RemoteAuth({
-      clientId: 'anderson-bot',
-      store,
-      backupSyncIntervalMs: 120000,
-    });
-    console.log(chalk.green('Usando RemoteAuth com Upstash Redis.'));
+    emitStatus("Configurando autenticação remota...");
+    const store = new UpstashRedisStore({ url: UPSTASH_REDIS_REST_URL, token: UPSTASH_REDIS_REST_TOKEN });
+    const pong = await store.redis.ping().catch(() => null);
+    if(pong) emitStatus("Conexão com Redis confirmada.");
+    
+    authStrategy = new RemoteAuth({ clientId: 'anderson-bot', store, backupSyncIntervalMs: 120000 });
   } catch (e) {
-    console.error(chalk.red('Falha CRÍTICA ao conectar ao Redis. O bot não pode iniciar.'), e);
-    throw new Error("Não foi possível conectar ao Redis, encerrando.");
+    emitStatus(`ERRO CRÍTICO ao conectar ao Redis: ${e.message}`);
+    throw new Error("Falha na conexão com o Redis.");
   }
 
-  const clientOpts = {
+  const client = new Client({
     authStrategy,
-    puppeteer: {
-      headless: true,
-      args: [
-        '--no-sandbox',
-        '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage',
-        '--disable-gpu',
-        '--disable-extensions',
-      ],
-    },
-  };
-
-  if (usePinned) {
-    clientOpts.webVersionCache = {
-      type: 'remote',
-      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
-      strict: false,
-    };
-  }
-
-  const client = new Client(clientOpts);
-
-  async function cleanExit(reason) {
-    try {
-      console.log(chalk.yellow('Encerrando cliente WhatsApp...'), reason || '');
-      await client.destroy();
-    } catch (_) {}
-    process.exit(0);
-  }
-
-  process.on('SIGINT', () => cleanExit('SIGINT'));
-  process.on('SIGTERM', () => cleanExit('SIGTERM'));
-  process.on('uncaughtException', (err) => {
-    console.error(chalk.red('Uncaught Exception:'), err);
-    cleanExit('uncaughtException');
+    puppeteer: { headless: true, args: ['--no-sandbox', '--disable-setuid-sandbox'] },
+    webVersionCache: usePinned ? { type: 'remote', remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html' } : undefined,
   });
-  process.on('unhandledRejection', (reason) => {
-    console.error(chalk.red('Unhandled Rejection:'), reason);
-    cleanExit('unhandledRejection');
-  });
-
+  
+  // Handlers de eventos do cliente
   client.on('qr', (qr) => {
-    console.log(chalk.blueBright('QR code gerado (escaneie com o WhatsApp):'));
+    emitStatus("QR Code gerado! Escaneie no terminal para conectar.");
     qrcode.generate(qr, { small: true });
   });
 
   client.on('ready', () => {
+    emitStatus("Tudo pronto! Bot está operacional.");
     console.log(chalk.green('Client is ready!'));
+  });
+  
+  client.on('auth_failure', (msg) => {
+      emitStatus(`ERRO DE AUTENTICAÇÃO: ${msg}. A sessão é inválida.`);
+  });
+  
+  client.on('disconnected', (reason) => {
+      emitStatus(`Bot desconectado: ${reason}.`);
   });
 
   client.on('message', async (message) => {
@@ -432,45 +485,32 @@ async function createClient(usePinned) {
     }
   });
 
+  // Inicialização do cliente
   try {
+    emitStatus("Iniciando cliente WhatsApp...");
     await client.initialize();
     return client;
   } catch (err) {
-    console.warn(chalk.yellow('Inicialização com pinagem falhou, tentando sem versionamento fixo...'), err.message);
+    emitStatus(`Aviso: Inicialização falhou. Tentando novamente...`);
     if (usePinned) {
-      return createClient(false);
+        return createClient(false);
     }
     throw err;
   }
 }
 
-// --- PONTO DE ENTRADA MODIFICADO PARA O RENDER.COM ---
 
-// 1. Inicia o servidor web para o Render não reclamar da porta
-const app = express();
-const PORT = process.env.PORT || 3000;
-
-app.get('/', (req, res) => {
-  res.status(200).send('Servidor do Bot está ativo. Cliente WhatsApp rodando em segundo plano.');
-});
-
-app.listen(PORT, () => {
-  console.log(chalk.green(`Servidor web de health check rodando na porta ${PORT}.`));
-});
-
-// 2. Inicia o bot do WhatsApp (seu código original) em segundo plano
-(async () => {
-  console.log(chalk.blueBright('Iniciando o bot do WhatsApp...'));
-  try {
-    // >>>>>>>>>>>> ALTERAÇÃO AQUI <<<<<<<<<<<<
-    // Primeiro, "acordamos" a API externa para que ela esteja pronta
-    // para as primeiras requisições do bot.
-    await wakeUpApi();
+// --- LÓGICA DE INICIALIZAÇÃO DO BOT ---
+server.listen(PORT, async () => {
+    emitStatus("Servidor web iniciado. Começando a inicialização do bot...");
+    console.log(chalk.green(`Servidor web de health check rodando na porta ${PORT}.`));
     
-    // Agora, iniciamos o cliente do WhatsApp.
-    await createClient(true);
-    // >>>>>>>>>>>> FIM DA ALTERAÇÃO <<<<<<<<<<<<
-  } catch (e) {
-    console.error(chalk.red('Falha crítica ao inicializar o client do WhatsApp:'), e);
-  }
-})();
+    try {
+      await wakeUpApi();
+      await createClient(true);
+    } catch (e) {
+      const errorMsg = `ERRO CRÍTICO ao inicializar o bot: ${e.message}`;
+      emitStatus(errorMsg);
+      console.error(chalk.red(errorMsg), e);
+    }
+});

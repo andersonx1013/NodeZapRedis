@@ -36,7 +36,6 @@ const server = http.createServer(app);
 const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
-// <<< NOVA ESTRUTURA DE PROGRESSO >>>
 let progressState = {
     currentActivity: "Aguardando início do servidor...",
     steps: [
@@ -49,30 +48,18 @@ let progressState = {
     ]
 };
 
-// Nova função para atualizar e transmitir o progresso
 function updateProgress(stepId, status, activityText) {
     console.log(chalk.cyan(`[PROGRESS] → Etapa: ${stepId}, Status: ${status}, Atividade: ${activityText || ''}`));
-    
     const step = progressState.steps.find(s => s.id === stepId);
-    if (step) {
-        step.status = status;
-    }
-
-    if (activityText) {
-        progressState.currentActivity = activityText;
-    }
-
-    // Garante que se uma etapa falhar, a etapa final também falhe
+    if (step) { step.status = status; }
+    if (activityText) { progressState.currentActivity = activityText; }
     if (status === 'error') {
         const readyStep = progressState.steps.find(s => s.id === 'ready');
         if(readyStep) readyStep.status = 'error';
     }
-
     io.emit('progressUpdate', progressState);
 }
 
-
-// --- PÁGINA HTML COM CSS PARA O CHECKLIST DE PROGRESSO ---
 const statusPageHtml = `
 <!DOCTYPE html>
 <html lang="pt-BR">
@@ -103,20 +90,12 @@ const statusPageHtml = `
     <h1>Bot Status</h1>
     <ul id="progress-checklist"></ul>
     <div id="current-activity">Aguardando conexão...</div>
-
     <script src="/socket.io/socket.io.js"></script>
     <script>
         const socket = io();
         const checklist = document.getElementById('progress-checklist');
         const activityDiv = document.getElementById('current-activity');
-
-        const ICONS = {
-            pending: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>',
-            running: '<svg style="animation: spin 1s linear infinite;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 9a8 8 0 0114.53-2.71A8 8 0 0115 20.97"/></svg>',
-            success: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>',
-            error: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293 5.354 4.646z"/></svg>'
-        };
-
+        const ICONS = { pending: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>', running: '<svg style="animation: spin 1s linear infinite;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 9a8 8 0 0114.53-2.71A8 8 0 0115 20.97"/></svg>', success: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>', error: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293 5.354 4.646z"/></svg>' };
         function renderProgress(state) {
             checklist.innerHTML = '';
             state.steps.forEach(step => {
@@ -127,18 +106,9 @@ const statusPageHtml = `
             });
             activityDiv.textContent = state.currentActivity;
         }
-
         socket.on('progressUpdate', renderProgress);
-
-        socket.on('connect', () => {
-            socket.emit('requestHistory');
-        });
-
-        socket.on('history', (state) => {
-            if (state && state.steps) {
-                renderProgress(state);
-            }
-        });
+        socket.on('connect', () => { socket.emit('requestHistory'); });
+        socket.on('history', (state) => { if (state && state.steps) { renderProgress(state); } });
     </script>
 </body>
 </html>
@@ -146,11 +116,9 @@ const statusPageHtml = `
 app.get('/', (req, res) => {
     res.send(statusPageHtml);
 });
-
 io.on('connection', (socket) => {
     socket.emit('history', progressState);
 });
-
 
 // --- configurações do bot ---
 const UPSTASH_REDIS_REST_URL = 'https://humorous-koi-8598.upstash.io';
@@ -164,7 +132,6 @@ const conversationHistory = {};
 let coldStart = true;
 const systemMessage = `
 🚫 NÃO forneça exemplos de código, trechos \`\`\`, comandos de terminal ou descrições técnicas de programação, a menos que o usuário peça explicitamente. Quando o assunto for programação sem pedido de código, responda em linguagem natural, sem mostrar sintaxe. Remova qualquer bloco de código se o usuário não solicitou.
-
 Responderei somente o que o usuário quer saber de forma objetiva e descontraída e em primeira pessoa, sempre em português brasileiro. Se o usuário pedir para trocar o idioma, você pode falar em outro. Direi informações sobre o CV somente se o usuário perguntar. Só responderei coisas relacionadas ao meu currículo. Eu fui criado pelo Anderson. Eu sou o avatar de Anderson Xavier. Tenho 40 anos. Residente em São Paulo - SP, Brasil. Tenho mais de 20 anos de experiência no mercado de TI, atuando de forma multidisciplinar em processos e tecnologias. Meu contato é andersonx1013@gmail.com e (+55)16 99740-5919 (Business). Atuo como Arquiteto de Software e Líder Técnico, com vasta experiência em desenvolvimento de software e serviços, abrangendo desde o design até a implementação e otimização do ciclo de vida completo. Minhas principais habilidades técnicas incluem desenvolvimento web e mobile com NodeJS, React, React Native, JavaScript, C# (.NET Core e Desktop), Razor, WebForms, MVC e WebAPI, além de back-end e APIs com NodeJS, C#, Java e Python. Possuo expertise em cloud computing, trabalhando com AWS, GCP e Azure (DevOps), utilizando Docker e Kubernetes para orquestração e arquiteturas serverless. Tenho profundo conhecimento em bancos de dados SQL Server, PostgreSQL, Neo4J, MongoDB, Redis, Oracle, MySQL e ElasticSearch. Na área de Inteligência Artificial, Machine Learning e Data Science, trabalho com Python e R, NLP, IA, Deep Learning, modelos GPT (3 e 4), TensorFlow, PyTorch, RASA, Hugging Face, LangChain, Llama 2 e estatística com R Studio e Anaconda. Minhas competências se estendem a DevOps e infraestrutura, incluindo CI/CD, Git, servidores de aplicação como WebLogic e IIS, e virtualização com VMWare. Sou especialista em segurança, abrangendo Cryptography (RSA, AES, TLS), IAM (OAuth 2.0, Keycloak), DevSecOps (Snyk, Trivy), Pentesting (Kali, Nmap), SIEM (Splunk, Sentinel), OWASP Top 10, GDPR/LGPD e segurança de APIs e containers (JWT, Falco), além de resiliência (DDoS, WAF). Também possuo experiência com RabbitMQ, Kafka, ElasticSearch e SonarQube. Aplico metodologias ágeis como Scrum, Safe e Kanban, Design Thinking, UML, BPM, PMI, Gerenciamento de Mudanças (Germud), C4 Model e RUP. Tenho experiência em gerenciamento de equipes, recrutamento, gestão de projetos, definição de KPIs, gestão de custos (Capex/Opex), garantia da qualidade, operações, comunicação com executivos (CEOs) e formação de times. Aplico padrões de design e arquitetura como Abstract Factory, Facade, MVC, Microservices (Hexagonal, Vertical Slice, EDA) e SOA. Ao se apresentar responderei de forma objetiva e curta. Devo ficar esperto se a pessoa está me elogiando, agradecendo ou encerrando a conversa e nesse caso faço mesmo sem ficar falando do meu currículo a todo momento. Leve em conta sempre o nome da pessoa na hora de responder. Sempre levar em consideração as respostas anteriores para não responder besteira. O que você não souber a respeito do currículo dele diga que não sabe e passe o contato. Nas horas vagas gosto de estudar tecnologias emergentes, ver filmes com minha família, brincar com meu filho David e jogar jogos eletrônicos tipo Starcraft. Sou casado. Meus defeitos são que sou muito perfeccionista e ansioso. Minhas qualidades são entusiasmo e adoro ajudar pessoas a se desenvolverem tanto na vida profissional quanto pessoal. Prefiro backend a frontend. Gosto de comer pizza, arroz, feijão e ovo cozido. Notar se a mensagem é para mim com base no contexto das respostas anteriores, também indiretamente. Se alguém tirar ou fizer piadinhas comigo responderei ironicamente com uma piada.
 `;
 
@@ -195,36 +162,6 @@ function buildContextSnippet(history, maxMessages = 3) {
   const userMsgs = history.filter(m => m.role === 'user');
   const last = userMsgs.slice(-maxMessages);
   return last.map(m => m.content).join(' | ');
-}
-
-function userAskedForCode(text) {
-  if (!text) {
-    return false;
-  }
-  const patterns = [
-    /mostre o código/i, /exemplo de código/i, /me d[eé] o código/i,
-    /me mostre o código/i, /código por favor/i, /preciso do código/i,
-    /snippet/i, /trecho de código/i,
-  ];
-  return patterns.some(rx => rx.test(text));
-}
-
-function sanitizeReply(reply, userWantedCode) {
-  if (userWantedCode) {
-    return reply;
-  }
-  let sanitized = reply.replace(/```[\s\S]*?```/g, '[código ocultado]');
-  sanitized = sanitized.replace(/~~~[\s\S]*?~~~/g, '[código ocultado]');
-  sanitized = sanitized.replace(/`([^`]+)`/g, '[código ocultado]');
-  return sanitized;
-}
-
-function localHeuristicTrigger(text) {
-  if (!text) {
-    return false;
-  }
-  const trimmed = text.trim();
-  return /^\/bot\b/i.test(trimmed) || /^anderson[:\s]/i.test(trimmed);
 }
 
 async function analyzeIfMessageIsForAI(text, contextSnippet = '') {
@@ -276,7 +213,6 @@ async function processMessage(text, sessionKey, userName, chatName) {
     if (conversationHistory[sessionKey].history.length > 10) {
       conversationHistory[sessionKey].history.shift();
     }
-    const wantsCode = userAskedForCode(text);
     const userDescriptor = chatName ? `${userName} (no grupo "${chatName}")` : userName;
     const messages = [
       { role: 'system', content: systemMessage },
@@ -300,8 +236,6 @@ async function processMessage(text, sessionKey, userName, chatName) {
     );
     let reply = response.data.choices?.[0]?.message?.content?.trim() || '';
     console.log(chalk.cyan(`   OpenRouter respondeu (bruto): "${reply}"`));
-    reply = sanitizeReply(reply, wantsCode);
-    conversationHistory[sessionKey].history.push({ role: 'assistant', content: reply });
     return reply;
   } catch (error) {
     console.error(chalk.red('Erro ao processar mensagem:'), error.response?.data || error.message || error);
@@ -413,6 +347,9 @@ async function createClient(usePinned) {
         const responseMessage = await processMessage(message.body, sessionKey, userName, chat.name);
         
         if (chat.isGroup) {
+          // <<< AQUI ESTÁ A CORREÇÃO DEFINITIVA >>>
+          // Deixa a biblioteca do WhatsApp cuidar da menção.
+          // A gente só passa o texto da resposta e o objeto do contato.
           await message.reply(responseMessage, { mentions: [contact] });
         } else {
           await message.reply(responseMessage);
@@ -423,7 +360,7 @@ async function createClient(usePinned) {
       try {
           await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem.');
       } catch (_) {
-          // Ignora erro se não conseguir nem enviar a mensagem de erro
+          // Ignora o erro se não conseguir nem enviar a mensagem de falha
       }
     }
   });
@@ -449,6 +386,5 @@ server.listen(PORT, async () => {
       await createClient(true);
     } catch (e) {
       console.error(chalk.red(e));
-      // A própria etapa que falhou já terá atualizado o status na página web
     }
 });

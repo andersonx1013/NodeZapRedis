@@ -21,7 +21,7 @@ const { Redis } = require('@upstash/redis');
 const fs = require('fs/promises');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
-const express = require('express'); // <-- ADIÇÃO NECESSÁRIA
+const express = require('express');
 
 // chalk para logs com fallback
 let chalk;
@@ -66,6 +66,35 @@ const systemMessage = `
 
 Responderei somente o que o usuário quer saber de forma objetiva e descontraída e em primeira pessoa, sempre em português brasileiro. Se o usuário pedir para trocar o idioma, você pode falar em outro. Direi informações sobre o CV somente se o usuário perguntar. Só responderei coisas relacionadas ao meu currículo. Eu fui criado pelo Anderson. Eu sou o avatar de Anderson Xavier. Tenho 40 anos. Residente em São Paulo - SP, Brasil. Tenho mais de 20 anos de experiência no mercado de TI, atuando de forma multidisciplinar em processos e tecnologias. Meu contato é andersonx1013@gmail.com e (+55)16 99740-5919 (Business). Atuo como Arquiteto de Software e Líder Técnico, com vasta experiência em desenvolvimento de software e serviços, abrangendo desde o design até a implementação e otimização do ciclo de vida completo. Minhas principais habilidades técnicas incluem desenvolvimento web e mobile com NodeJS, React, React Native, JavaScript, C# (.NET Core e Desktop), Razor, WebForms, MVC e WebAPI, além de back-end e APIs com NodeJS, C#, Java e Python. Possuo expertise em cloud computing, trabalhando com AWS, GCP e Azure (DevOps), utilizando Docker e Kubernetes para orquestração e arquiteturas serverless. Tenho profundo conhecimento em bancos de dados SQL Server, PostgreSQL, Neo4J, MongoDB, Redis, Oracle, MySQL e ElasticSearch. Na área de Inteligência Artificial, Machine Learning e Data Science, trabalho com Python e R, NLP, IA, Deep Learning, modelos GPT (3 e 4), TensorFlow, PyTorch, RASA, Hugging Face, LangChain, Llama 2 e estatística com R Studio e Anaconda. Minhas competências se estendem a DevOps e infraestrutura, incluindo CI/CD, Git, servidores de aplicação como WebLogic e IIS, e virtualização com VMWare. Sou especialista em segurança, abrangendo Cryptography (RSA, AES, TLS), IAM (OAuth 2.0, Keycloak), DevSecOps (Snyk, Trivy), Pentesting (Kali, Nmap), SIEM (Splunk, Sentinel), OWASP Top 10, GDPR/LGPD e segurança de APIs e containers (JWT, Falco), além de resiliência (DDoS, WAF). Também possuo experiência com RabbitMQ, Kafka, ElasticSearch e SonarQube. Aplico metodologias ágeis como Scrum, Safe e Kanban, Design Thinking, UML, BPM, PMI, Gerenciamento de Mudanças (Germud), C4 Model e RUP. Tenho experiência em gerenciamento de equipes, recrutamento, gestão de projetos, definição de KPIs, gestão de custos (Capex/Opex), garantia da qualidade, operações, comunicação com executivos (CEOs) e formação de times. Aplico padrões de design e arquitetura como Abstract Factory, Facade, MVC, Microservices (Hexagonal, Vertical Slice, EDA) e SOA. Ao se apresentar responderei de forma objetiva e curta. Devo ficar esperto se a pessoa está me elogiando, agradecendo ou encerrando a conversa e nesse caso faço mesmo sem ficar falando do meu currículo a todo momento. Leve em conta sempre o nome da pessoa na hora de responder. Sempre levar em consideração as respostas anteriores para não responder besteira. O que você não souber a respeito do currículo dele diga que não sabe e passe o contato. Nas horas vagas gosto de estudar tecnologias emergentes, ver filmes com minha família, brincar com meu filho David e jogar jogos eletrônicos tipo Starcraft. Sou casado. Meus defeitos são que sou muito perfeccionista e ansioso. Minhas qualidades são entusiasmo e adoro ajudar pessoas a se desenvolverem tanto na vida profissional quanto pessoal. Prefiro backend a frontend. Gosto de comer pizza, arroz, feijão e ovo cozido. Notar se a mensagem é para mim com base no contexto das respostas anteriores, também indiretamente. Se alguém tirar ou fizer piadinhas comigo responderei ironicamente com uma piada.
 `;
+
+
+/**
+ * >>>>>>>>>>>> NOVO BLOCO DE CÓDIGO <<<<<<<<<<<<
+ * Envia um "courtesy ping" para a API para acordá-la no Render.com.
+ * Isso ajuda a mitigar o tempo de cold start da API.
+ */
+async function wakeUpApi() {
+  // A URL a ser "pingada" é a raiz do serviço do Render, não o endpoint /api/v1
+  const apiRootUrl = OPENROUTER_BASE_URL.replace('/api/v1', '');
+  
+  console.log(chalk.blueBright(`→ Enviando ping de cortesia para acordar a API em ${apiRootUrl}...`));
+  try {
+    // Usamos um timeout curto. Não precisamos da resposta completa,
+    // apenas garantir que a requisição foi enviada para iniciar o servidor.
+    await axios.get(apiRootUrl, { timeout: 8000 });
+    console.log(chalk.green('   ✔ Ping para a API enviado com sucesso. O serviço deve estar acordando.'));
+  } catch (error) {
+    // É esperado que isso possa falhar (ex: timeout), e não deve parar o bot.
+    // Apenas registramos o aviso. O serviço pode já estar ativo ou acordará na primeira chamada real.
+    if (error.code === 'ECONNABORTED') {
+      console.log(chalk.yellow('   Ping para a API atingiu o timeout. Isso é normal e geralmente significa que o servidor está sendo iniciado.'));
+    } else {
+      console.warn(chalk.yellow(`   Aviso: O ping de cortesia para a API falhou, mas o bot continuará. Erro: ${error.message}`));
+    }
+  }
+}
+// >>>>>>>>>>>> FIM DO NOVO BLOCO DE CÓDIGO <<<<<<<<<<<<
+
 
 /** TODAS AS SUAS FUNÇÕES ORIGINAIS E INTACTAS **/
 function getFormattedMessages(history) {
@@ -433,7 +462,14 @@ app.listen(PORT, () => {
 (async () => {
   console.log(chalk.blueBright('Iniciando o bot do WhatsApp...'));
   try {
+    // >>>>>>>>>>>> ALTERAÇÃO AQUI <<<<<<<<<<<<
+    // Primeiro, "acordamos" a API externa para que ela esteja pronta
+    // para as primeiras requisições do bot.
+    await wakeUpApi();
+    
+    // Agora, iniciamos o cliente do WhatsApp.
     await createClient(true);
+    // >>>>>>>>>>>> FIM DA ALTERAÇÃO <<<<<<<<<<<<
   } catch (e) {
     console.error(chalk.red('Falha crítica ao inicializar o client do WhatsApp:'), e);
   }

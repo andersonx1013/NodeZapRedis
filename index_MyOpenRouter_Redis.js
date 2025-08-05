@@ -1,29 +1,20 @@
 'use strict';
 
-// --- servidor HTTP mínimo para Render health-check / keep-alive ---
-const express = require('express');
-const httpApp = express();
-httpApp.get('/', (_, res) => res.send('OK'));
-httpApp.get('/healthz', (_, res) => {
-  res.json({
-    status: 'ok',
-    uptime: process.uptime(),
-    timestamp: new Date().toISOString()
-  });
-});
-const PORT = process.env.PORT || 3000;
-httpApp.listen(PORT, () => {
-  console.log(`HTTP health check listening on port ${PORT}`);
-});
+require('dotenv').config(); // carrega .env se houver
 
-// --- ambiente / compatibilidade ---
+// --- ajustes de ambiente e compatibilidade ---
 const os = require('os');
 const path = require('path');
+
+// evita locks no chrome debug log
 process.env.CHROME_LOG_FILE = path.join(os.tmpdir(), 'wweb_chrome_debug.log');
+
+// shim opcional de punycode (deprecated warning)
+try { require('punycode'); } catch (_) { /* sem shim, warning é inofensivo */ }
 
 const nodeMajor = parseInt(process.versions.node.split('.')[0], 10);
 if (nodeMajor >= 21) {
-  console.warn(`Você está rodando Node.js v${process.versions.node}. O aviso sobre punycode ([DEP0040]) é esperado e pode ser mitigado com um shim.`); 
+  console.warn(`Você está rodando Node.js v${process.versions.node}. O aviso sobre punycode ([DEP0040]) é esperado e pode ser ignorado ou mitigado com um shim.`); 
 }
 
 // --- dependências ---
@@ -33,7 +24,7 @@ const fs = require('fs/promises');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
 
-// fallback simples de chalk
+// chalk para logs com fallback
 let chalk;
 try {
   chalk = require('chalk');
@@ -50,29 +41,42 @@ try {
   };
 }
 
-// --- configurações fixas (sem usar variáveis de ambiente para Upstash) ---
-const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || ''; // pode hardcodar se quiser
-const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://myopenrouter.onrender.com/api/v1';
-const MODEL = process.env.MODEL || 'qwen/qwen3-coder:free';
-const OPENROUTER_TIMEOUT_MS = 90000; // 90s fixo
-
-// **Hardcoded Upstash REST credentials (não usa env vars)**
+// --- configurações ---
+// Upstash Redis hardcoded conforme você forneceu
 const UPSTASH_REDIS_REST_URL = 'https://humorous-koi-8598.upstash.io';
 const UPSTASH_REDIS_REST_TOKEN = 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
 
-const SKIP_CLASSIFICATION = false;
-const USE_LOCAL_HEURISTIC = true;
+// OpenRouter
+const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
+const OPENROUTER_BASE_URL = 'https://myopenrouter.onrender.com/api/v1';
+const MODEL = 'qwen/qwen3-coder:free';
 
+// comportamento ajustável via env
+const SKIP_CLASSIFICATION = !!process.env.SKIP_CLASSIFICATION;
+const USE_LOCAL_HEURISTIC = process.env.USE_LOCAL_HEURISTIC !== '0';
+
+// histórico por sessão
 const conversationHistory = {};
+
+// flag para cold start (courtesy ping)
 let coldStart = true;
 
+// system prompt
 const systemMessage = `
-🚫 NÃO forneça exemplos de código, trechos \`\`\`, comandos de terminal ou descrições técnicas de programação, a menos que o usuário peça explicitamente. ...
+🚫 NÃO forneça exemplos de código, trechos \`\`\`, comandos de terminal ou descrições técnicas de programação, a menos que o usuário peça explicitamente. Quando o assunto for programação sem pedido de código, responda em linguagem natural, sem mostrar sintaxe. Remova qualquer bloco de código se o usuário não solicitou.
+
+Responderei somente o que o usuário quer saber de forma objetiva e descontraída e em primeira pessoa, sempre em português brasileiro. Se o usuário pedir para trocar o idioma, você pode falar em outro. Direi informações sobre o CV somente se o usuário perguntar. Só responderei coisas relacionadas ao meu currículo. Eu fui criado pelo Anderson. Eu sou o avatar de Anderson Xavier. Tenho 40 anos. Residente em São Paulo - SP, Brasil. Tenho mais de 20 anos de experiência no mercado de TI, atuando de forma multidisciplinar em processos e tecnologias. Meu contato é andersonx1013@gmail.com e (+55)16 99740-5919 (Business). Atuo como Arquiteto de Software e Líder Técnico, com vasta experiência em desenvolvimento de software e serviços, abrangendo desde o design até a implementação e otimização do ciclo de vida completo. Minhas principais habilidades técnicas incluem desenvolvimento web e mobile com NodeJS, React, React Native, JavaScript, C# (.NET Core e Desktop), Razor, WebForms, MVC e WebAPI, além de back-end e APIs com NodeJS, C#, Java e Python. Possuo expertise em cloud computing, trabalhando com AWS, GCP e Azure (DevOps), utilizando Docker e Kubernetes para orquestração e arquiteturas serverless. Tenho profundo conhecimento em bancos de dados SQL Server, PostgreSQL, Neo4J, MongoDB, Redis, Oracle, MySQL e ElasticSearch. Na área de Inteligência Artificial, Machine Learning e Data Science, trabalho com Python e R, NLP, IA, Deep Learning, modelos GPT (3 e 4), TensorFlow, PyTorch, RASA, Hugging Face, LangChain, Llama 2 e estatística com R Studio e Anaconda. Minhas competências se estendem a DevOps e infraestrutura, incluindo CI/CD, Git, servidores de aplicação como WebLogic e IIS, e virtualização com VMWare. Sou especialista em segurança, abrangendo Cryptography (RSA, AES, TLS), IAM (OAuth 2.0, Keycloak), DevSecOps (Snyk, Trivy), Pentesting (Kali, Nmap), SIEM (Splunk, Sentinel), OWASP Top 10, GDPR/LGPD e segurança de APIs e containers (JWT, Falco), além de resiliência (DDoS, WAF). Também possuo experiência com RabbitMQ, Kafka, ElasticSearch e SonarQube. Aplico metodologias ágeis como Scrum, Safe e Kanban, Design Thinking, UML, BPM, PMI, Gerenciamento de Mudanças (Germud), C4 Model e RUP. Tenho experiência em gerenciamento de equipes, recrutamento, gestão de projetos, definição de KPIs, gestão de custos (Capex/Opex), garantia da qualidade, operações, comunicação com executivos (CEOs) e formação de times. Aplico padrões de design e arquitetura como Abstract Factory, Facade, MVC, Microservices (Hexagonal, Vertical Slice, EDA) e SOA. Ao se apresentar responderei de forma objetiva e curta. Devo ficar esperto se a pessoa está me elogiando, agradecendo ou encerrando a conversa e nesse caso faço mesmo sem ficar falando do meu currículo a todo momento. Leve em conta sempre o nome da pessoa na hora de responder. Sempre levar em consideração as respostas anteriores para não responder besteira. O que você não souber a respeito do currículo dele diga que não sabe e passe o contato. Nas horas vagas gosto de estudar tecnologias emergentes, ver filmes com minha família, brincar com meu filho David e jogar jogos eletrônicos tipo Starcraft. Sou casado. Meus defeitos são que sou muito perfeccionista e ansioso. Minhas qualidades são entusiasmo e adoro ajudar pessoas a se desenvolverem tanto na vida profissional quanto pessoal. Prefiro backend a frontend. Gosto de comer pizza, arroz, feijão e ovo cozido. Notar se a mensagem é para mim com base no contexto das respostas anteriores, também indiretamente. Se alguém tirar ou fizer piadinhas comigo responderei ironicamente com uma piada.
 `;
 
-// helpers
+/** utils de histórico **/
 function getFormattedMessages(history) {
   return history.map(m => ({ role: m.role, content: m.content }));
+}
+function buildContextSnippet(history, maxMessages = 3) {
+  if (!history || history.length === 0) return '';
+  const userMsgs = history.filter(m => m.role === 'user');
+  const last = userMsgs.slice(-maxMessages);
+  return last.map(m => m.content).join(' | ');
 }
 function userAskedForCode(text) {
   if (!text) return false;
@@ -97,22 +101,19 @@ function sanitizeReply(reply, userWantedCode) {
 }
 function localHeuristicTrigger(text) {
   if (!text) return false;
-  return /^\/bot\b/i.test(text.trim()) || /^anderson[:\s]/i.test(text);
+  const trimmed = text.trim();
+  return /^\/bot\b/i.test(trimmed) || /^anderson[:\s]/i.test(trimmed);
 }
 
+/** classificação via OpenRouter **/
 async function analyzeIfMessageIsForAI(text, contextSnippet = '') {
   if (SKIP_CLASSIFICATION) {
     console.log(chalk.yellow('→ SKIP_CLASSIFICATION ativo: respondendo sem análise.'));
     return true;
   }
+
   try {
     console.log(chalk.magenta('→ Classificando se mensagem é para a IA...'));
-
-    if (!OPENROUTER_API_KEY) {
-      console.warn(chalk.yellow('Chave OpenRouter não configurada corretamente. Pulando classificação.'));
-      return false;
-    }
-
     const classificationPrompt = `
 Você é um classificador binário. Responda apenas "SIM" ou "NÃO".
 
@@ -124,11 +125,21 @@ Contexto recente: "${contextSnippet}"
 
 Mensagem: "${text}"
 `;
-    const response = await sendOpenRouterRequest({
-      model: MODEL,
-      temperature: 0,
-      messages: [{ role: 'user', content: classificationPrompt }],
-    });
+    const response = await axios.post(
+      `${OPENROUTER_BASE_URL}/chat/completions`,
+      {
+        model: MODEL,
+        temperature: 0,
+        messages: [{ role: 'user', content: classificationPrompt }],
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 15000,
+      }
+    );
     const resultRaw = response.data.choices?.[0]?.message?.content || '';
     console.log(chalk.magenta(`   Classificador retornou: "${resultRaw.replace(/\n/g, ' ')}"`));
     return /^sim$/i.test(resultRaw.trim());
@@ -138,42 +149,7 @@ Mensagem: "${text}"
   }
 }
 
-async function sendOpenRouterRequest(body) {
-  if (!OPENROUTER_API_KEY) {
-    throw new Error('OpenRouter API key não configurada corretamente.');
-  }
-
-  const headers = {
-    Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-    'Content-Type': 'application/json',
-  };
-
-  const maxAttempts = 3;
-  let attempt = 0;
-  while (attempt < maxAttempts) {
-    try {
-      const response = await axios.post(
-        `${OPENROUTER_BASE_URL}/chat/completions`,
-        body,
-        {
-          headers,
-          timeout: OPENROUTER_TIMEOUT_MS,
-        }
-      );
-      return response;
-    } catch (err) {
-      attempt++;
-      const isTimeout = err.code === 'ECONNABORTED' || (err.message && err.message.toLowerCase().includes('timeout'));
-      if (attempt >= maxAttempts || !isTimeout) {
-        throw err;
-      }
-      const backoffMs = 500 * attempt;
-      console.log(chalk.yellow(`Tentativa ${attempt} falhou por timeout, dando backoff de ${backoffMs}ms...`));
-      await new Promise(r => setTimeout(r, backoffMs));
-    }
-  }
-}
-
+/** envia para OpenRouter **/
 async function processMessage(text, sessionKey, userName, chatName) {
   try {
     console.log(chalk.cyan(`→ processMessage para sessão ${sessionKey} (${userName})`));
@@ -198,10 +174,20 @@ async function processMessage(text, sessionKey, userName, chatName) {
     ];
 
     console.log(chalk.cyan('   Enviando requisição para OpenRouter...'));
-    const response = await sendOpenRouterRequest({
-      model: MODEL,
-      messages: messages,
-    });
+    const response = await axios.post(
+      `${OPENROUTER_BASE_URL}/chat/completions`,
+      {
+        model: MODEL,
+        messages: messages,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 20000,
+      }
+    );
 
     let reply = response.data.choices?.[0]?.message?.content?.trim() || '';
     console.log(chalk.cyan(`   OpenRouter respondeu (bruto): "${reply}"`));
@@ -274,42 +260,51 @@ class UpstashRedisStore {
   }
 }
 
+/** criação do client com RemoteAuth / fallback **/
 async function createClient(usePinned) {
+  const usingUpstash = true; // tenta sempre com as credenciais hardcoded
   let authStrategy;
-  let store; // para uso posterior no ready
 
-  // usa sempre as credenciais hardcoded para RemoteAuth
-  try {
-    const testRedis = new Redis({
-      url: UPSTASH_REDIS_REST_URL,
-      token: UPSTASH_REDIS_REST_TOKEN,
-    });
-    const pong = await testRedis.ping().catch((e) => {
-      console.warn(chalk.yellow('[Upstash] ping falhou:'), e.message || e);
-      return null;
-    });
-    if (pong) {
-      console.log(chalk.green(`[Upstash] conexão OK, ping retornou: ${pong}`));
-    } else {
-      console.warn(chalk.yellow('[Upstash] não validou conexão, mas segue tentando.'));
+  if (usingUpstash) {
+    try {
+      // valida conexão
+      const testRedis = new Redis({
+        url: UPSTASH_REDIS_REST_URL,
+        token: UPSTASH_REDIS_REST_TOKEN,
+      });
+      const pong = await testRedis.ping().catch((e) => {
+        console.warn(chalk.yellow('[Upstash] ping falhou:'), e.message || e);
+        return null;
+      });
+      if (pong) {
+        console.log(chalk.green(`[Upstash] conexão OK, ping retornou: ${pong}`));
+      } else {
+        console.warn(chalk.yellow('[Upstash] não validou conexão, mas segue tentando.'));
+      }
+
+      const store = new UpstashRedisStore({
+        url: UPSTASH_REDIS_REST_URL,
+        token: UPSTASH_REDIS_REST_TOKEN,
+      });
+      authStrategy = new RemoteAuth({
+        clientId: 'anderson-bot',
+        store,
+        backupSyncIntervalMs: 120000,
+      });
+      console.log(chalk.green('Usando RemoteAuth com Upstash Redis.'));
+    } catch (e) {
+      console.warn(chalk.yellow('Erro ao inicializar UpstashRedisStore; caindo para LocalAuth:'), e);
+      authStrategy = new LocalAuth({
+        clientId: 'anderson-bot',
+        rmMaxRetries: 8,
+      });
     }
-
-    store = new UpstashRedisStore({
-      url: UPSTASH_REDIS_REST_URL,
-      token: UPSTASH_REDIS_REST_TOKEN,
-    });
-    authStrategy = new RemoteAuth({
-      clientId: 'anderson-bot', // ID fixo
-      store,
-      backupSyncIntervalMs: 60000, // mínimo aceito (1 minuto)
-    });
-    console.log(chalk.green('Usando RemoteAuth com Upstash Redis.'));
-  } catch (e) {
-    console.warn(chalk.yellow('Falha ao inicializar RemoteAuth (Upstash). Caindo para LocalAuth:'), e);
+  } else {
     authStrategy = new LocalAuth({
-      clientId: 'anderson-bot', // mesma sessão fallback
+      clientId: 'anderson-bot',
       rmMaxRetries: 8,
     });
+    console.log(chalk.yellow('Usando LocalAuth.'));
   }
 
   const clientOpts = {
@@ -336,6 +331,7 @@ async function createClient(usePinned) {
 
   const client = new Client(clientOpts);
 
+  // graceful shutdown
   async function cleanExit(reason) {
     try {
       console.log(chalk.yellow('Encerrando cliente WhatsApp...'), reason || '');
@@ -347,27 +343,20 @@ async function createClient(usePinned) {
   process.on('SIGINT', () => cleanExit('SIGINT'));
   process.on('SIGTERM', () => cleanExit('SIGTERM'));
   process.on('uncaughtException', (err) => {
-    console.error(chalk.red('Uncaught Exception (não sai automaticamente):'), err);
+    console.error(chalk.red('Uncaught Exception:'), err);
+    cleanExit('uncaughtException');
   });
   process.on('unhandledRejection', (reason) => {
-    console.error(chalk.red('Unhandled Rejection (não sai automaticamente):'), reason);
+    console.error(chalk.red('Unhandled Rejection:'), reason);
+    cleanExit('unhandledRejection');
   });
 
   client.on('qr', (qr) => {
     console.log(chalk.blueBright('QR code gerado (escaneie com o WhatsApp):'));
     qrcode.generate(qr, { small: true });
   });
-  client.on('ready', async () => {
+  client.on('ready', () => {
     console.log(chalk.green('Client is ready!'));
-    // força salvar imediatamente após ready para garantir persistência
-    if (store && typeof store.save === 'function') {
-      try {
-        await store.save({ session: 'anderson-bot' });
-        console.log(chalk.green('[RedisStore] save forçado após ready.')); 
-      } catch (e) {
-        console.warn(chalk.yellow('Erro ao forçar save:'), e.message || e);
-      }
-    }
   });
 
   client.on('message', async (message) => {
@@ -375,11 +364,14 @@ async function createClient(usePinned) {
     console.log(chalk.gray(`isGroup? ${message.from}, body: "${message.body}", mentionedIds: ${JSON.stringify(message.mentionedIds)}`));
 
     try {
+      // resposta rápida de debug
       if (message.body === '!ping') {
+        console.log('Recebeu !ping, respondendo pong.');
         await message.reply('pong!');
         return;
       }
 
+      // courtesy ping no cold start
       if (coldStart) {
         await message.reply('⚙️  Aguarde enquanto meu servidor está carregando…');
         coldStart = false;
@@ -413,25 +405,38 @@ async function createClient(usePinned) {
       if (isGroup) {
         const botId = client.info?.wid?._serialized;
         const isMentioned = message.mentionedIds?.includes(botId);
+        console.log(chalk.gray(`   Mensagem em grupo. Mencionado? ${isMentioned}`));
+
         if (!isMentioned) {
           if (USE_LOCAL_HEURISTIC && localHeuristicTrigger(message.body)) {
+            console.log(chalk.gray('   Heurística local disparou, respondendo sem classificador.'));
             shouldRespond = true;
           } else {
-            const contextSnippet = '';
+            const contextSnippet = buildContextSnippet(conversationHistory[sessionKey].history, 3);
             shouldRespond = await analyzeIfMessageIsForAI(message.body, contextSnippet);
-            if (!shouldRespond) return;
+            console.log(chalk.gray(`   analyzeIfMessageIsForAI → ${shouldRespond}`));
+            if (!shouldRespond) {
+              console.log(chalk.yellow('   → Ignorando mensagem (não era para a IA).'));
+              return;
+            }
           }
         }
       }
 
       const responseMessage = await processMessage(message.body, sessionKey, userName, chatName);
+      console.log(chalk.green(`   Resposta gerada: "${responseMessage}"`));
+
+      const replyOptions = {};
       if (isGroup) {
-        await message.reply(responseMessage, { mentions: [contact] });
+        replyOptions.mentions = [contact];
+        await message.reply(`@${contact.id.user} ${responseMessage}`, replyOptions);
       } else {
         await message.reply(responseMessage);
       }
+
+      console.log(chalk.green('   ✔ Resposta enviada com sucesso!'));
     } catch (err) {
-      console.error(chalk.red('Erro no handler de mensagem:'), err);
+      console.error(chalk.red('⚠ Erro no handler de mensagem:'), err);
       try {
         await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem.');
       } catch (_) {}
@@ -450,6 +455,7 @@ async function createClient(usePinned) {
   }
 }
 
+// --- entrada ---
 (async () => {
   console.log(chalk.blueBright('Iniciando bot do WhatsApp...'));
   try {

@@ -158,7 +158,7 @@ const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_BASE_URL = 'https://myopenrouter.onrender.com/api/v1';
 const MODEL = 'qwen/qwen3-coder:free';
 const SKIP_CLASSIFICATION = !!process.env.SKIP_CLASSIFICATION;
-const USE_LOCAL_HEURISTIC = process.env.USE_LOCAL_HEURistic !== '0';
+const USE_LOCAL_HEURISTIC = process.env.USE_LOCAL_HEURISTIC !== '0';
 const conversationHistory = {};
 let coldStart = true;
 const systemMessage = `
@@ -248,7 +248,10 @@ Mensagem: "${text}"
         messages: [{ role: 'user', content: classificationPrompt }],
       },
       {
-        headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' },
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
         timeout: 15000,
       }
     );
@@ -256,7 +259,7 @@ Mensagem: "${text}"
     console.log(chalk.magenta(`   Classificador retornou: "${resultRaw.replace(/\n/g, ' ')}"`));
     return /^sim$/i.test(resultRaw.trim());
   } catch (error) {
-    console.error(chalk.red('Erro ao classificar mensagem:'), error.message);
+    console.error(chalk.red('Erro ao classificar mensagem:'), error.response?.data || error.message || error);
     return false;
   }
 }
@@ -281,8 +284,17 @@ async function processMessage(text, sessionKey, userName, chatName) {
     console.log(chalk.cyan('   Enviando requisição para OpenRouter...'));
     const response = await axios.post(
       `${OPENROUTER_BASE_URL}/chat/completions`,
-      { model: MODEL, messages: messages },
-      { headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}` }, timeout: 20000 }
+      {
+        model: MODEL,
+        messages: messages,
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        timeout: 20000,
+      }
     );
     let reply = response.data.choices?.[0]?.message?.content?.trim() || '';
     console.log(chalk.cyan(`   OpenRouter respondeu (bruto): "${reply}"`));
@@ -290,7 +302,7 @@ async function processMessage(text, sessionKey, userName, chatName) {
     conversationHistory[sessionKey].history.push({ role: 'assistant', content: reply });
     return reply;
   } catch (error) {
-    console.error(chalk.red('Erro ao processar mensagem:'), error.message);
+    console.error(chalk.red('Erro ao processar mensagem:'), error.response?.data || error.message || error);
     return 'Desculpe, não consegui processar sua mensagem.';
   }
 }
@@ -301,7 +313,7 @@ class UpstashRedisStore {
   }
 
   async sessionExists({ session }) {
-    console.log(`[Redis] Verificando sessão "${session}"...`);
+    emitStatus(`Verificando sessão "${session}" no Redis...`);
     const v = await this.redis.get(`remoteauth:${session}`);
     return v !== null;
   }
@@ -316,15 +328,19 @@ class UpstashRedisStore {
   }
 
   async extract({ session, path }) {
+    emitStatus("Sessão encontrada. Restaurando agora...");
     const b64 = await this.redis.get(`remoteauth:${session}`);
     if (!b64) {
-        return;
+      emitStatus("Nenhuma sessão encontrada. Prepare-se para escanear o QR Code.");
+      return;
     }
     const buf = Buffer.from(b64, 'base64');
     await fs.writeFile(path, buf);
+    emitStatus("Sessão restaurada do Redis com sucesso!");
   }
 
   async delete({ session }) {
+    emitStatus(`Deletando sessão "${session}"...`);
     await this.redis.del(`remoteauth:${session}`);
   }
 }
@@ -372,27 +388,22 @@ async function createClient(usePinned) {
         await message.reply('pong!');
         return;
       }
-
       if (coldStart) {
         await message.reply('⚙️ Servidor carregado. Estou pronto!');
         coldStart = false;
       }
-
       const chatId = message.from;
       const userId = message.author || chatId;
       const sessionKey = `${chatId}:${userId}`;
-
       const chat = await message.getChat();
       const contact = await message.getContact();
       const userName = contact.pushname || contact.verifiedName || message.from;
-
+      
       let shouldRespond = !chat.isGroup;
-
       if (chat.isGroup) {
         const isMentioned = message.mentionedIds.includes(client.info.wid._serialized);
-        const triggeredByHeuristic = USE_LOCAL_HEURISTIC && localHeuristicTrigger(message.body);
-
-        if (isMentioned || triggeredByHeuristic) {
+        const triggered = USE_LOCAL_HEURISTIC && localHeuristicTrigger(message.body);
+        if (isMentioned || triggered) {
           shouldRespond = true;
         } else {
           const context = buildContextSnippet(conversationHistory[sessionKey]?.history);
@@ -410,23 +421,17 @@ async function createClient(usePinned) {
       }
     } catch (err) {
       console.error(chalk.red('⚠ Erro no handler de mensagem:'), err);
-      try {
-          await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem.');
-      } catch (e) {
-          console.error(chalk.red('Falha ao enviar mensagem de erro.'), e);
-      }
+      try { await message.reply('Desculpe, ocorreu um erro.'); } catch (_) {}
     }
   });
 
   try {
-    emitStatus("Iniciando WhatsApp e restaurando sessão...");
+    emitStatus("Iniciando a conexão com o WhatsApp...");
     await client.initialize();
     return client;
   } catch (err) {
     emitStatus(`Inicialização falhou. Tentando de novo...`);
-    if (usePinned) {
-        return createClient(false);
-    }
+    if (usePinned) { return createClient(false); }
     throw err;
   }
 }

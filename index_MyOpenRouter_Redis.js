@@ -11,6 +11,7 @@ const { Redis } = require('@upstash/redis');
 const fs = require('fs/promises');
 const qrcode = require('qrcode-terminal');
 const axios = require('axios');
+const AdmZip = require('adm-zip');
 
 // --- ajustes de ambiente ---
 process.env.CHROME_LOG_FILE = path.join(os.tmpdir(), 'wweb_chrome_debug.log');
@@ -28,7 +29,6 @@ try {
 } catch (_) {
   chalk = { red: s => s, green: s => s, yellow: s => s, blueBright: s => s, magenta: s => s, cyan: s => s, gray: s => s };
 }
-
 
 // --- PONTO DE ENTRADA E SERVIDOR WEB COM STATUS EM TEMPO REAL ---
 const app = express();
@@ -113,6 +113,7 @@ const statusPageHtml = `
 </body>
 </html>
 `;
+
 app.get('/', (req, res) => {
     res.send(statusPageHtml);
 });
@@ -151,7 +152,7 @@ const systemMessage = `
 - **Habilidades Principais:**
   - **Dev Full-Stack:** NodeJS, React, React Native, C# (.NET), Java, Python.
   - **Cloud & DevOps:** AWS, GCP, Azure, Docker, Kubernetes, CI/CD, Serverless.
-  - **Bancos de Dados:** SQL Server, PostgreSQL, MongoDB, Redis, Neo4J, Oracle.
+  - **Bancos de Dados:** SQL Server, PostgreSQL, MongoDB, Neo4J, Oracle.
   - **IA & ML:** Python, R, TensorFlow, PyTorch, NLP, LangChain, Hugging Face.
   - **Segurança:** DevSecOps (Snyk, Trivy), Pentesting, IAM (OAuth, Keycloak), OWASP Top 10.
   - **Arquitetura & Metodologias:** Microservices (Hexagonal, EDA), SOA, Scrum, SAFE, Kanban.
@@ -267,6 +268,18 @@ async function processMessage(text, sessionKey, userName, chatName) {
   }
 }
 
+// --- Classe de armazenamento customizada com filtro de “lixo” ---
+const JUNK_DIRS = [
+  /^IndexedDB\//,
+  /^Service Worker\//,
+  /^Cache\//,
+  /^GPUCache\//,
+  /^Code Cache\//,
+  /^databases\//,
+  /^Storage\//,
+  /^QuotaManager\//,
+];
+
 class UpstashRedisStore {
     constructor({ url, token }) {
         this.redis = new Redis({ url, token });
@@ -278,8 +291,18 @@ class UpstashRedisStore {
     }
 
     async save({ session }) {
-        const zipName = `${session}.zip`;
-        const buf = await fs.readFile(zipName);
+        const zipPath = `${session}.zip`;
+        // 1. Lê o ZIP gerado pelo RemoteAuth
+        const originalZip = new AdmZip(zipPath);
+        // 2. Cria um ZIP “clean” copiando só os arquivos essenciais
+        const cleanZip = new AdmZip();
+        originalZip.getEntries().forEach(entry => {
+            if (!JUNK_DIRS.some(rx => rx.test(entry.entryName))) {
+                cleanZip.addFile(entry.entryName, entry.getData());
+            }
+        });
+        // 3. Serializa e salva no Redis em base64
+        const buf = cleanZip.toBuffer();
         const b64 = buf.toString('base64');
         await this.redis.set(`remoteauth:${session}`, b64);
     }
@@ -287,7 +310,7 @@ class UpstashRedisStore {
     async extract({ session, path }) {
         const b64 = await this.redis.get(`remoteauth:${session}`);
         if (b64) {
-            await fs.writeFile(path, Buffer.from(b64, 'base64'));
+            await fs.writeFile(`${session}.zip`, Buffer.from(b64, 'base64'));
         }
     }
 
@@ -381,9 +404,7 @@ async function createClient(usePinned) {
       console.error(chalk.red('⚠ Erro no handler de mensagem:'), err);
       try {
           await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem.');
-      } catch (_) {
-          // Ignora o erro se não conseguir nem enviar a mensagem de falha
-      }
+      } catch (_) {}
     }
   });
 

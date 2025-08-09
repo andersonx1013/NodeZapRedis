@@ -126,7 +126,7 @@ const UPSTASH_REDIS_REST_URL = 'https://humorous-koi-8598.upstash.io';
 const UPSTASH_REDIS_REST_TOKEN = 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
 const OPENROUTER_BASE_URL = 'https://myopenrouter.onrender.com/api/v1';
-const MODEL = 'openrouter/horizon-beta';
+const MODEL = 'deepseek/deepseek-r1-0528:free';
 const SKIP_CLASSIFICATION = !!process.env.SKIP_CLASSIFICATION;
 const USE_LOCAL_HEURISTIC = process.env.USE_LOCAL_HEURISTIC !== '0';
 const conversationHistory = {};

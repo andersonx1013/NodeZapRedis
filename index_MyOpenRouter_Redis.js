@@ -602,6 +602,7 @@ async function createClient() {
   }
 
   const execPath = getChromeExecutablePath();
+  console.log('Usando Chrome em:', execPath);
   const puppeteerOpts = {
     headless: true,
     executablePath: execPath || undefined,

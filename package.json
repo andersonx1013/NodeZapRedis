@@ -1,28 +1,22 @@
 {
-  "name": "nodezap",
-  "version": "1.0.0",
-  "description": "",
-  "main": "index_MyOpenRouter_Redis.js",
-  "engines": {
-    "node": "22.x"
-  },
-  "scripts": {
-    "start": "node index_MyOpenRouter_Redis.js"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC",
-  "dependencies": {
-    "@upstash/redis": "^1.35.3",
-    "archiver": "^7.0.1",
-    "axios": "^1.7.9",
-    "chalk": "^4.1.2",
-    "dotenv": "^17.2.1",
-    "express": "^4.21.2",
-    "fs-extra": "^11.3.0",
-    "qrcode-terminal": "^0.12.0",
-    "socket.io": "^4.8.1",
-    "unzipper": "^0.12.3",
-    "whatsapp-web.js": "^1.32.0"
-  }
+   "name": "nodezap",
+   "version": "1.0.0",
+   "main": "index_MyOpenRouter_Redis.js",
+   "engines": { "node": "22.x" },
+   "scripts": { "start": "node index_MyOpenRouter_Redis.js" },
+   "dependencies": {
+     "adm-zip": "^0.5.10",
+     "rimraf": "^5.0.0",
+     "@upstash/redis": "^1.35.3",
+     "archiver": "^7.0.1",
+     "axios": "^1.7.9",
+     "chalk": "^4.1.2",
+     "dotenv": "^17.2.1",
+     "express": "^4.21.2",
+     "fs-extra": "^11.3.0",
+     "qrcode-terminal": "^0.12.0",
+     "socket.io": "^4.8.1",
+     "unzipper": "^0.12.3",
+     "whatsapp-web.js": "github:pedroslopez/whatsapp-web.js#main"
+   }
 }

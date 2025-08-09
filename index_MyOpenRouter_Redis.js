@@ -119,7 +119,6 @@ app.get('/', (req,res)=>res.send(statusPageHtml));
 io.on('connection', (socket)=>socket.emit('history', progressState));
 
 // ===== Config (.env no Render) =====
-// ⚠️ remova segredos hardcoded. use somente variáveis de ambiente.
 const UPSTASH_REDIS_REST_URL = 'https://humorous-koi-8598.upstash.io';
 const UPSTASH_REDIS_REST_TOKEN = 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
 const OPENROUTER_API_KEY       = process.env.OPENROUTER_API_KEY || 'xxx';
@@ -613,7 +612,11 @@ async function createClient() {
       '--disable-gpu',
       '--disable-features=TranslateUI',
       '--no-first-run',
-      '--no-default-browser-check'
+      '--no-default-browser-check',
+      '--disable-software-rasterizer',
+      '--disable-accelerated-2d-canvas',
+      '--password-store=basic',
+      '--use-mock-keychain'
     ],
   };
 

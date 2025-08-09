@@ -63,32 +63,57 @@ function updateProgress(stepId, status, activityText) {
 }
 
 const statusPageHtml = `
-<!doctype html><html lang="pt-BR"><head>
-<meta charset="utf-8"/><meta name="viewport" content="width=device-width,initial-scale=1"/>
-<title>Status do Bot</title>
-<style>
-:root{--bg:#0d1117;--fg:#c9d1d9;--acc:#58a6ff;--ok:#238636;--err:#da3633;--pen:#8b949e;--bd:#30363d;--card:#161b22}
-@keyframes spin{to{transform:rotate(360deg)}}
-*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--fg);font:16px/1.5 ui-monospace, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;display:grid;place-items:center;height:100vh;padding:24px}
-h1{margin:0 0 24px;font:700 40px/1.1 system-ui,sans-serif;color:var(--acc)}
-ul{list-style:none;margin:0;padding:0;width:min(640px,100%)}
-li{display:flex;gap:12px;align-items:center;border-bottom:1px solid var(--bd);padding:12px 0}
-.badge{width:14px;height:14px;border-radius:50%}
-.pending .badge{background:var(--pen)}.running .badge{background:var(--acc);animation:spin 1s linear infinite}.success .badge{background:var(--ok)}.error .badge{background:var(--err)}
-#activity{margin-top:16px;background:var(--card);padding:16px;border-radius:10px}
-</style></head><body>
-<main>
-<h1>Bot Status</h1>
-<ul id="steps"></ul>
-<div id="activity">Aguardando...</div>
-</main>
-<script src="/socket.io/socket.io.js"></script>
-<script>
-const stepsEl=document.getElementById('steps'),act=document.getElementById('activity');
-const render=s=>{stepsEl.innerHTML='';s.steps.forEach(st=>{const li=document.createElement('li');li.className=st.status;li.innerHTML='<span class="badge"></span><span>'+st.text+'</span>';stepsEl.appendChild(li)});act.textContent=s.currentActivity;}
-const io_ = io(); io_.on('progressUpdate', render); io_.on('connect', ()=>io_.emit('requestHistory')); io_.on('history', s=>s?.steps&&render(s));
-</script>
-</body></html>
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Status do Bot</title>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Roboto+Mono:wght@400&display=swap');
+        :root { --c-bg: #0d1117; --c-text: #c9d1d9; --c-accent: #58a6ff; --c-success: #238636; --c-error: #da3633; --c-pending: #8b949e; --c-border: #30363d; --c-card: #161b22; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        body { background-color: var(--c-bg); color: var(--c-text); font-family: 'Roboto Mono', monospace; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+        h1 { font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 4rem; color: var(--c-accent); margin: 0 0 40px 0; text-shadow: 0 0 10px rgba(88, 166, 255, 0.3); }
+        #progress-checklist { list-style: none; padding: 0; margin: 0; width: 100%; max-width: 600px; }
+        .step { display: flex; align-items: center; padding: 12px 0; font-size: 1.5rem; transition: all 0.3s ease; border-bottom: 1px solid var(--c-border); }
+        .step:last-child { border-bottom: none; }
+        .step-icon { width: 40px; height: 40px; margin-right: 20px; display: flex; align-items: center; justify-content: center; }
+        .step-icon svg { width: 28px; height: 28px; }
+        .step.pending { color: var(--c-pending); }
+        .step.running { color: var(--c-accent); }
+        .step.success { color: var(--c-success); }
+        .step.error { color: var(--c-error); }
+        #current-activity { font-size: 2rem; line-height: 1.4; margin-top: 40px; padding: 20px 30px; border-radius: 12px; background-color: var(--c-card); color: #fff; min-height: 50px; text-align: center; }
+        @media (max-width: 768px) { h1 { font-size: 3rem; } .step { font-size: 1.2rem; } #current-activity { font-size: 1.5rem; } }
+    </style>
+</head>
+<body>
+    <h1>Bot Status</h1>
+    <ul id="progress-checklist"></ul>
+    <div id="current-activity">Aguardando conexão...</div>
+    <script src="/socket.io/socket.io.js"></script>
+    <script>
+        const socket = io();
+        const checklist = document.getElementById('progress-checklist');
+        const activityDiv = document.getElementById('current-activity');
+        const ICONS = { pending: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>', running: '<svg style="animation: spin 1s linear infinite;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 9a8 8 0 0114.53-2.71A8 8 0 0115 20.97"/></svg>', success: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>', error: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293 5.354 4.646z"/></svg>' };
+        function renderProgress(state) {
+            checklist.innerHTML = '';
+            state.steps.forEach(step => {
+                const li = document.createElement('li');
+                li.className = 'step ' + step.status;
+                li.innerHTML = \`<div class="step-icon">\${ICONS[step.status]}</div><span class="step-text">\${step.text}</span>\`;
+                checklist.appendChild(li);
+            });
+            activityDiv.textContent = state.currentActivity;
+        }
+        socket.on('progressUpdate', renderProgress);
+        socket.on('connect', () => { socket.emit('requestHistory'); });
+        socket.on('history', (state) => { if (state && state.steps) { renderProgress(state); } });
+    </script>
+</body>
+</html>
 `;
 app.get('/', (req,res)=>res.send(statusPageHtml));
 io.on('connection', (socket)=>socket.emit('history', progressState));

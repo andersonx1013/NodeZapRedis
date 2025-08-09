@@ -120,8 +120,8 @@ io.on('connection', (socket)=>socket.emit('history', progressState));
 
 // ===== Config (.env no Render) =====
 // ⚠️ remova segredos hardcoded. use somente variáveis de ambiente.
-const UPSTASH_REDIS_REST_URL   = process.env.UPSTASH_REDIS_REST_URL;
-const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
+const UPSTASH_REDIS_REST_URL = 'https://humorous-koi-8598.upstash.io';
+const UPSTASH_REDIS_REST_TOKEN = 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
 const OPENROUTER_API_KEY       = process.env.OPENROUTER_API_KEY || 'xxx';
 const OPENROUTER_BASE_URL      = process.env.OPENROUTER_BASE_URL || 'https://myopenrouter.onrender.com';
 const MODEL                    = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-r1-0528:free';

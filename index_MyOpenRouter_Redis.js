@@ -99,12 +99,12 @@ const statusPageHtml = `
         const activityDiv = document.getElementById('current-activity');
         const ICONS = { pending: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>', running: '<svg style="animation: spin 1s linear infinite;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 9a8 8 0 0114.53-2.71A8 8 0 0115 20.97"/></svg>', success: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>', error: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293 5.354 4.646z"/></svg>' };
         function renderProgress(state) {
-            checklist.innerHTML = '';
+            const el = (tag, cls, html) => { const e = document.createElement(tag); if (cls) e.className = cls; if (html) e.innerHTML = html; return e; }
+            const ul = el('ul'); ul.id = 'progress-checklist';
+            checklist.replaceWith(ul);
             state.steps.forEach(step => {
-                const li = document.createElement('li');
-                li.className = 'step ' + step.status;
-                li.innerHTML = \`<div class="step-icon">\${ICONS[step.status]}</div><span class="step-text">\${step.text}</span>\`;
-                checklist.appendChild(li);
+                const li = el('li', 'step ' + step.status, '<div class="step-icon">' + ICONS[step.status] + '</div><span class="step-text">' + step.text + '</span>');
+                ul.appendChild(li);
             });
             activityDiv.textContent = state.currentActivity;
         }
@@ -119,15 +119,32 @@ app.get('/', (req,res)=>res.send(statusPageHtml));
 io.on('connection', (socket)=>socket.emit('history', progressState));
 
 // ===== Config (.env no Render) =====
-const UPSTASH_REDIS_REST_URL   = process.env.UPSTASH_REDIS_REST_URL || 'https://humorous-koi-8598.upstash.io';
-const UPSTASH_REDIS_REST_TOKEN = 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
+// ⚠️ remova segredos hardcoded. use somente variáveis de ambiente.
+const UPSTASH_REDIS_REST_URL   = process.env.UPSTASH_REDIS_REST_URL;
+const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN;
 const OPENROUTER_API_KEY       = process.env.OPENROUTER_API_KEY || 'xxx';
-const OPENROUTER_BASE_URL      = 'https://myopenrouter.onrender.com';
+const OPENROUTER_BASE_URL      = process.env.OPENROUTER_BASE_URL || 'https://myopenrouter.onrender.com';
 const MODEL                    = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-r1-0528:free';
 const USE_LOCAL_HEURISTIC      = process.env.USE_LOCAL_HEURISTIC !== '0'; // on por padrão
 const REMOTEAUTH_CLIENT_ID     = process.env.REMOTEAUTH_CLIENT_ID || 'anderson-bot';
 const BACKUP_EVERY_MS          = Number(process.env.BACKUP_EVERY_MS || (10 * 60 * 1000)); // 10min
 const MEM_HISTORY_COUNT        = Number(process.env.MEM_HISTORY_COUNT || 12); // nº de mensagens por sessão em memória
+
+// ===== util: detectar caminho do Chrome =====
+function getChromeExecutablePath() {
+  // 1) se o postinstall setou PUPPETEER_EXECUTABLE_PATH, use-o
+  if (process.env.PUPPETEER_EXECUTABLE_PATH) return process.env.PUPPETEER_EXECUTABLE_PATH;
+
+  // 2) tente via puppeteer.executablePath()
+  try {
+    const puppeteer = require('puppeteer');
+    const p = puppeteer.executablePath();
+    if (p && typeof p === 'string') return p;
+  } catch (_) {}
+
+  // 3) último recurso: deixe null -> Puppeteer decide
+  return null;
+}
 
 // ===== Prompt base =====
 const systemMessage = `
@@ -570,10 +587,13 @@ class UpstashRedisStore {
 let SELF_ID = null;
 let coldStart = true;
 
-async function createClient(usePinnedHtml) {
+async function createClient() {
   updateProgress('redis', 'running', 'Conectando ao banco de dados Redis...');
   let store;
   try {
+    if (!UPSTASH_REDIS_REST_URL || !UPSTASH_REDIS_REST_TOKEN) {
+      throw new Error('Variáveis UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN ausentes.');
+    }
     store = new UpstashRedisStore({ url: UPSTASH_REDIS_REST_URL, token: UPSTASH_REDIS_REST_TOKEN });
     await store.redis.ping();
     updateProgress('redis', 'success', 'Conexão com Redis estabelecida.');
@@ -581,6 +601,21 @@ async function createClient(usePinnedHtml) {
     updateProgress('redis', 'error', `Falha ao conectar ao Redis: ${e.message}`);
     throw e;
   }
+
+  const execPath = getChromeExecutablePath();
+  const puppeteerOpts = {
+    headless: true,
+    executablePath: execPath || undefined,
+    args: [
+      '--no-sandbox',
+      '--disable-setuid-sandbox',
+      '--disable-dev-shm-usage',
+      '--disable-gpu',
+      '--disable-features=TranslateUI',
+      '--no-first-run',
+      '--no-default-browser-check'
+    ],
+  };
 
   const authStrategy = new RemoteAuth({
     clientId: REMOTEAUTH_CLIENT_ID,
@@ -591,13 +626,7 @@ async function createClient(usePinnedHtml) {
   const client = new Client({
     authStrategy,
     authTimeoutMs: 60000,
-    puppeteer: {
-      headless: true,
-      args: [
-        '--no-sandbox', '--disable-setuid-sandbox',
-        '--disable-dev-shm-usage', '--disable-gpu'
-      ],
-    },
+    puppeteer: puppeteerOpts,
   });
 
   updateProgress('session', 'running', 'Verificando se existe sessão salva...');
@@ -616,6 +645,10 @@ async function createClient(usePinnedHtml) {
     SELF_ID = client.info?.wid?._serialized || null;
     updateProgress('ready', 'success', 'Bot conectado e totalmente operacional!');
     console.log(chalk.green('Client is ready!'), SELF_ID ? ` SELF_ID=${SELF_ID}` : '');
+  });
+
+  client.on('loading_screen', (percent, message) => {
+    updateProgress('whatsapp', 'running', `Carregando WhatsApp (${percent}%) - ${message || ''}`);
   });
 
   client.on('auth_failure', (msg) => updateProgress('whatsapp', 'error', `Falha na autenticação: ${msg}`));
@@ -682,14 +715,27 @@ async function createClient(usePinnedHtml) {
     }
   });
 
+  // Inicialização com pequeno retry para lidar com reload de contexto do WhatsApp Web
   updateProgress('whatsapp', 'running', 'Inicializando conexão com o WhatsApp...');
-  try {
-    await client.initialize();
-    updateProgress('whatsapp', 'success', 'Cliente WhatsApp inicializado.');
-  } catch (err) {
-    updateProgress('whatsapp', 'error', `Falha ao inicializar: ${err.message}`);
-    throw err;
+  const MAX_TRIES = 2;
+  for (let attempt = 1; attempt <= MAX_TRIES; attempt++) {
+    try {
+      await client.initialize();
+      updateProgress('whatsapp', 'success', 'Cliente WhatsApp inicializado.');
+      break;
+    } catch (err) {
+      const msg = String(err?.message || err);
+      const isCtxDestroyed = /Execution context was destroyed/i.test(msg);
+      if (attempt < MAX_TRIES && isCtxDestroyed) {
+        console.warn(chalk.yellow(`[Init Attempt ${attempt}] Context destroyed; tentando novamente em 1s...`));
+        await new Promise(r => setTimeout(r, 1000));
+        continue;
+      }
+      updateProgress('whatsapp', 'error', `Falha ao inicializar: ${msg}`);
+      throw err;
+    }
   }
+
   return client;
 }
 
@@ -697,9 +743,14 @@ async function createClient(usePinnedHtml) {
 server.listen(PORT, async () => {
   updateProgress('server', 'success', 'Servidor web iniciado e aguardando o bot...');
   console.log(chalk.green(`Servidor rodando na porta ${PORT}.`));
+
+  // logs úteis pra troubleshoot
+  process.on('unhandledRejection', (reason) => console.error('unhandledRejection:', reason));
+  process.on('uncaughtException', (err) => console.error('uncaughtException:', err));
+
   try {
     await wakeUpApi();
-    await createClient(true);
+    await createClient();
   } catch (e) {
     console.error(chalk.red(e));
   }

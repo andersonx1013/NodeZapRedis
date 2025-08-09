@@ -122,7 +122,7 @@ io.on('connection', (socket)=>socket.emit('history', progressState));
 const UPSTASH_REDIS_REST_URL   = process.env.UPSTASH_REDIS_REST_URL || 'https://humorous-koi-8598.upstash.io';
 const UPSTASH_REDIS_REST_TOKEN = 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
 const OPENROUTER_API_KEY       = process.env.OPENROUTER_API_KEY || '';
-const OPENROUTER_BASE_URL      = process.env.OPENROUTER_BASE_URL || 'https://myopenrouter.onrender.com/api/v1';
+const OPENROUTER_BASE_URL      = 'https://myopenrouter.onrender.com';
 const MODEL                    = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-r1-0528:free';
 const USE_LOCAL_HEURISTIC      = process.env.USE_LOCAL_HEURISTIC !== '0'; // on por padrão
 const REMOTEAUTH_CLIENT_ID     = process.env.REMOTEAUTH_CLIENT_ID || 'anderson-bot';
@@ -394,9 +394,8 @@ A evolução da receita da nossa startup nos primeiros 7 anos é projetada da se
 // ===== Ping leve para acordar a API =====
 async function wakeUpApi() {
   updateProgress('api', 'running', 'Enviando "ping" para acordar a API de IA...');
-  const apiRootUrl = OPENROUTER_BASE_URL.replace('/api/v1','');
   try {
-    await axios.get(apiRootUrl, { timeout: 8000 });
+    await axios.get(OPENROUTER_BASE_URL, { timeout: 8000 });
     updateProgress('api', 'success', 'API de IA acordada com sucesso.');
   } catch (e) {
     if (e.code === 'ECONNABORTED') {
@@ -454,7 +453,7 @@ async function processMessage(text, sessionKey, userName, chatName) {
       { role: 'user', content: text }
     ];
     const doCall = () => axios.post(
-      `${OPENROUTER_BASE_URL}/chat/completions`,
+      `${OPENROUTER_BASE_URL}/api/v1/chat/completions`,
       { model: MODEL, messages },
       { headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 20000 }
     );

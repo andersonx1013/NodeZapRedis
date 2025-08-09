@@ -12,7 +12,7 @@ const path = require('path');
 const http = require('http');
 const express = require('express');
 const { Server } = require('socket.io');
-const { Client, RemoteAuth } = require('whatsapp-web.js');
+const { Client, RemoteAuth, RemoteWebCache } = require('whatsapp-web.js');
 const { Redis } = require('@upstash/redis');
 const fs = require('fs/promises');
 const qrcode = require('qrcode-terminal');
@@ -590,7 +590,18 @@ async function createClient(usePinnedHtml) {
 
   const client = new Client({
     authStrategy,
-    puppeteer: { headless: true, args: ['--no-sandbox','--disable-setuid-sandbox'] },
+    authTimeoutMs: 60000,
+    webVersionCache: new RemoteWebCache({
+      remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/{version}.html',
+      strict: false
+    }),
+    puppeteer: {
+      headless: true,
+      args: [
+        '--no-sandbox', '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage', '--disable-gpu'
+      ],
+    },
   });
 
   updateProgress('session', 'running', 'Verificando se existe sessão salva...');

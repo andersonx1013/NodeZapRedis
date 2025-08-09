@@ -6,7 +6,6 @@
   "type": "commonjs",
   "engines": { "node": "22.x" },
   "scripts": {
-    "postinstall": "node -e \"console.log('> baixando Chrome estável...');\" && npx @puppeteer/browsers install chrome@stable --install-deps || echo '⚠️ falha opcional ao instalar chrome (ambiente local?)'",
     "start": "node index_MyOpenRouter_Redis.js"
   },
   "dependencies": {

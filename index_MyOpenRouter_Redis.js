@@ -5,7 +5,7 @@ const os = require('os');
 const path = require('path');
 const http = require('http');
 const express = require('express');
-const { Server } = require("socket.io");
+const { Server } = require('socket.io');
 const { Client, LocalAuth, RemoteAuth } = require('whatsapp-web.js');
 const { Redis } = require('@upstash/redis');
 const fs = require('fs/promises');
@@ -37,100 +37,103 @@ const io = new Server(server);
 const PORT = process.env.PORT || 3000;
 
 let progressState = {
-    currentActivity: "Aguardando início do servidor...",
-    steps: [
-        { id: 'server', text: 'Iniciar Servidor Web', status: 'pending' },
-        { id: 'api', text: 'Acordar API de IA', status: 'pending' },
-        { id: 'redis', text: 'Conectar ao Redis', status: 'pending' },
-        { id: 'session', text: 'Verificar Sessão do WhatsApp', status: 'pending' },
-        { id: 'whatsapp', text: 'Conectar ao WhatsApp', status: 'pending' },
-        { id: 'ready', text: 'Bot Pronto e Online', status: 'pending' },
-    ]
+  currentActivity: "Aguardando início do servidor...",
+  steps: [
+    { id: 'server', text: 'Iniciar Servidor Web', status: 'pending' },
+    { id: 'api', text: 'Acordar API de IA', status: 'pending' },
+    { id: 'redis', text: 'Conectar ao Redis', status: 'pending' },
+    { id: 'session', text: 'Verificar Sessão do WhatsApp', status: 'pending' },
+    { id: 'whatsapp', text: 'Conectar ao WhatsApp', status: 'pending' },
+    { id: 'ready', text: 'Bot Pronto e Online', status: 'pending' },
+  ]
 };
 
 function updateProgress(stepId, status, activityText) {
-    console.log(chalk.cyan(`[PROGRESS] → Etapa: ${stepId}, Status: ${status}, Atividade: ${activityText || ''}`));
-    const step = progressState.steps.find(s => s.id === stepId);
-    if (step) { step.status = status; }
-    if (activityText) { progressState.currentActivity = activityText; }
-    if (status === 'error') {
-        const readyStep = progressState.steps.find(s => s.id === 'ready');
-        if(readyStep) readyStep.status = 'error';
-    }
-    io.emit('progressUpdate', progressState);
+  console.log(chalk.cyan(`[PROGRESS] → Etapa: ${stepId}, Status: ${status}, Atividade: ${activityText || ''}`));
+  const step = progressState.steps.find(s => s.id === stepId);
+  if (step) { step.status = status; }
+  if (activityText) { progressState.currentActivity = activityText; }
+  if (status === 'error') {
+    const readyStep = progressState.steps.find(s => s.id === 'ready');
+    if (readyStep) readyStep.status = 'error';
+  }
+  io.emit('progressUpdate', progressState);
 }
 
 const statusPageHtml = `
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Status do Bot</title>
-    <style>
-        @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Roboto+Mono:wght@400&display=swap');
-        :root { --c-bg: #0d1117; --c-text: #c9d1d9; --c-accent: #58a6ff; --c-success: #238636; --c-error: #da3633; --c-pending: #8b949e; --c-border: #30363d; --c-card: #161b22; }
-        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
-        body { background-color: var(--c-bg); color: var(--c-text); font-family: 'Roboto Mono', monospace; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
-        h1 { font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 4rem; color: var(--c-accent); margin: 0 0 40px 0; text-shadow: 0 0 10px rgba(88, 166, 255, 0.3); }
-        #progress-checklist { list-style: none; padding: 0; margin: 0; width: 100%; max-width: 600px; }
-        .step { display: flex; align-items: center; padding: 12px 0; font-size: 1.5rem; transition: all 0.3s ease; border-bottom: 1px solid var(--c-border); }
-        .step:last-child { border-bottom: none; }
-        .step-icon { width: 40px; height: 40px; margin-right: 20px; display: flex; align-items: center; justify-content: center; }
-        .step-icon svg { width: 28px; height: 28px; }
-        .step.pending { color: var(--c-pending); }
-        .step.running { color: var(--c-accent); }
-        .step.success { color: var(--c-success); }
-        .step.error { color: var(--c-error); }
-        #current-activity { font-size: 2rem; line-height: 1.4; margin-top: 40px; padding: 20px 30px; border-radius: 12px; background-color: var(--c-card); color: #fff; min-height: 50px; text-align: center; }
-        @media (max-width: 768px) { h1 { font-size: 3rem; } .step { font-size: 1.2rem; } #current-activity { font-size: 1.5rem; } }
-    </style>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Status do Bot</title>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@700&family=Roboto+Mono:wght@400&display=swap');
+    :root { --c-bg: #0d1117; --c-text: #c9d1d9; --c-accent: #58a6ff; --c-success: #238636; --c-error: #da3633; --c-pending: #8b949e; --c-border: #30363d; --c-card: #161b22; }
+    @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+    body { background-color: var(--c-bg); color: var(--c-text); font-family: 'Roboto Mono', monospace; display: flex; flex-direction: column; justify-content: center; align-items: center; height: 100vh; margin: 0; padding: 20px; box-sizing: border-box; }
+    h1 { font-family: 'Montserrat', sans-serif; font-weight: 700; font-size: 4rem; color: var(--c-accent); margin: 0 0 40px 0; text-shadow: 0 0 10px rgba(88, 166, 255, 0.3); }
+    #progress-checklist { list-style: none; padding: 0; margin: 0; width: 100%; max-width: 600px; }
+    .step { display: flex; align-items: center; padding: 12px 0; font-size: 1.5rem; transition: all 0.3s ease; border-bottom: 1px solid var(--c-border); }
+    .step:last-child { border-bottom: none; }
+    .step-icon { width: 40px; height: 40px; margin-right: 20px; display: flex; align-items: center; justify-content: center; }
+    .step-icon svg { width: 28px; height: 28px; }
+    .step.pending { color: var(--c-pending); }
+    .step.running { color: var(--c-accent); }
+    .step.success { color: var(--c-success); }
+    .step.error { color: var(--c-error); }
+    #current-activity { font-size: 2rem; line-height: 1.4; margin-top: 40px; padding: 20px 30px; border-radius: 12px; background-color: var(--c-card); color: #fff; min-height: 50px; text-align: center; }
+    @media (max-width: 768px) { h1 { font-size: 3rem; } .step { font-size: 1.2rem; } #current-activity { font-size: 1.5rem; } }
+  </style>
 </head>
 <body>
-    <h1>Bot Status</h1>
-    <ul id="progress-checklist"></ul>
-    <div id="current-activity">Aguardando conexão...</div>
-    <script src="/socket.io/socket.io.js"></script>
-    <script>
-        const socket = io();
-        const checklist = document.getElementById('progress-checklist');
-        const activityDiv = document.getElementById('current-activity');
-        const ICONS = { pending: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>', running: '<svg style="animation: spin 1s linear infinite;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 9a8 8 0 0114.53-2.71A8 8 0 0115 20.97"/></svg>', success: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>', error: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293 5.354 4.646z"/></svg>' };
-        function renderProgress(state) {
-            checklist.innerHTML = '';
-            state.steps.forEach(step => {
-                const li = document.createElement('li');
-                li.className = 'step ' + step.status;
-                li.innerHTML = \`<div class="step-icon">\${ICONS[step.status]}</div><span class="step-text">\${step.text}</span>\`;
-                checklist.appendChild(li);
-            });
-            activityDiv.textContent = state.currentActivity;
-        }
-        socket.on('progressUpdate', renderProgress);
-        socket.on('connect', () => { socket.emit('requestHistory'); });
-        socket.on('history', (state) => { if (state && state.steps) { renderProgress(state); } });
-    </script>
+  <h1>Bot Status</h1>
+  <ul id="progress-checklist"></ul>
+  <div id="current-activity">Aguardando conexão...</div>
+  <script src="/socket.io/socket.io.js"></script>
+  <script>
+    const socket = io();
+    const checklist = document.getElementById('progress-checklist');
+    const activityDiv = document.getElementById('current-activity');
+    const ICONS = { pending: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M8 9.5a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z"/></svg>', running: '<svg style="animation: spin 1s linear infinite;" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 4v5h5M20 20v-5h-5"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4 9a8 8 0 0114.53-2.71A8 8 0 0115 20.97"/></svg>', success: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zm-3.97-3.03a.75.75 0 0 0-1.08.022L7.477 9.417 5.384 7.323a.75.75 0 0 0-1.06 1.06L6.97 11.03a.75.75 0 0 0 1.079-.02l3.992-4.99a.75.75 0 0 0-.01-1.05z"/></svg>', error: '<svg fill="currentColor" viewBox="0 0 16 16"><path d="M16 8A8 8 0 1 1 0 8a8 8 0 0 1 16 0zM5.354 4.646a.5.5 0 1 0-.708.708L7.293 8l-2.647 2.646a.5.5 0 0 0 .708.708L8 8.707l2.646 2.647a.5.5 0 0 0 .708-.708L8.707 8l2.647-2.646a.5.5 0 0 0-.708-.708L8 7.293 5.354 4.646z"/></svg>' };
+    function renderProgress(state) {
+      checklist.innerHTML = '';
+      state.steps.forEach(step => {
+        const li = document.createElement('li');
+        li.className = 'step ' + step.status;
+        li.innerHTML = \`<div class="step-icon">\${ICONS[step.status]}</div><span class="step-text">\${step.text}</span>\`;
+        checklist.appendChild(li);
+      });
+      activityDiv.textContent = state.currentActivity;
+    }
+    socket.on('progressUpdate', renderProgress);
+    socket.on('connect', () => { socket.emit('requestHistory'); });
+    socket.on('history', (state) => { if (state && state.steps) { renderProgress(state); } });
+  </script>
 </body>
 </html>
 `;
 
-app.get('/', (req, res) => {
-    res.send(statusPageHtml);
-});
-io.on('connection', (socket) => {
-    socket.emit('history', progressState);
-});
+app.get('/', (req, res) => { res.send(statusPageHtml); });
+io.on('connection', (socket) => { socket.emit('history', progressState); });
 
 // --- configurações do bot ---
-const UPSTASH_REDIS_REST_URL = 'https://humorous-koi-8598.upstash.io';
-const UPSTASH_REDIS_REST_TOKEN = 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
+// ⚠️ Recomendação: mova URL/TOKEN do Redis para variáveis de ambiente.
+const UPSTASH_REDIS_REST_URL = process.env.UPSTASH_REDIS_REST_URL || 'https://humorous-koi-8598.upstash.io';
+const UPSTASH_REDIS_REST_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || 'ASGWAAIjcDFiNWQ0MmRiZjIxODg0ZTdkYWYxMzQ0N2QxYTBhZTc0YnAxMA';
+
 const OPENROUTER_API_KEY = process.env.OPENROUTER_API_KEY || '';
-const OPENROUTER_BASE_URL = 'https://myopenrouter.onrender.com/api/v1';
-const MODEL = 'deepseek/deepseek-r1-0528:free';
+const OPENROUTER_BASE_URL = process.env.OPENROUTER_BASE_URL || 'https://myopenrouter.onrender.com/api/v1';
+const MODEL = process.env.OPENROUTER_MODEL || 'deepseek/deepseek-r1-0528:free';
+
 const SKIP_CLASSIFICATION = !!process.env.SKIP_CLASSIFICATION;
 const USE_LOCAL_HEURISTIC = process.env.USE_LOCAL_HEURISTIC !== '0';
+
 const conversationHistory = {};
 let coldStart = true;
+let SELF_ID = null; // ← id do próprio bot (ex.: '5516997405919@c.us')
+
+// Mensagem de sistema para a IA
 const systemMessage = `
 ---
 # INSTRUÇÕES DE COMPORTAMENTO
@@ -181,12 +184,32 @@ function getFormattedMessages(history) {
 }
 
 function buildContextSnippet(history, maxMessages = 3) {
-  if (!history || history.length === 0) {
-    return '';
-  }
+  if (!history || history.length === 0) return '';
   const userMsgs = history.filter(m => m.role === 'user');
   const last = userMsgs.slice(-maxMessages);
   return last.map(m => m.content).join(' | ');
+}
+
+// --- Heurística local para saber se a msg é “para a IA” no grupo ---
+function localHeuristicForAI({ text, isGroup, selfId, mentionedIds = [], quotedFromMe = false }) {
+  if (!isGroup) return true; // DM sempre responde
+  if (!text) return false;
+
+  // 1) Foi mencionado explicitamente o próprio bot?
+  if (selfId && Array.isArray(mentionedIds) && mentionedIds.includes(selfId)) return true;
+
+  // 2) Responderam a uma msg do bot?
+  if (quotedFromMe) return true;
+
+  // 3) Gatilhos comuns
+  const s = text.toLowerCase().trim();
+  const triggers = [
+    /^([!/#])/,
+    /^(ia|ai|bot|assistente|gpt|chatgpt)[,:\s]/,
+    /\b(ia|bot|assistente|gpt|chatgpt)\b/,
+    /\banderson\b.*\b(bot|ia)\b/
+  ];
+  return triggers.some(rx => rx.test(s));
 }
 
 async function analyzeIfMessageIsForAI(text, contextSnippet = '') {
@@ -199,32 +222,23 @@ async function analyzeIfMessageIsForAI(text, contextSnippet = '') {
     const classificationPrompt = `
 Você é um classificador binário. Responda apenas "SIM" ou "NÃO".
 Considere que a mensagem é para a IA quando:
-• O texto menciona: "IA do Anderson", "Anderson bot", "bot do Anderson", "Apelido IA" (case-insensitive) OU
+• O texto menciona: "IA do Anderson", "Anderson bot", "bot do Anderson" OU
 • Pelo contexto recente (abaixo) fica claro que o usuário está falando com a IA.
 Contexto recente: "${contextSnippet}"
 Mensagem: "${text}"
 `;
     const response = await axios.post(
       `${OPENROUTER_BASE_URL}/chat/completions`,
-      {
-        model: MODEL,
-        temperature: 0,
-        messages: [{ role: 'user', content: classificationPrompt }],
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 15000,
-      }
+      { model: MODEL, temperature: 0, messages: [{ role: 'user', content: classificationPrompt }] },
+      { headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 15000 }
     );
     const resultRaw = response.data.choices?.[0]?.message?.content || '';
     console.log(chalk.magenta(`   Classificador retornou: "${resultRaw.replace(/\n/g, ' ')}"`));
     return /^sim$/i.test(resultRaw.trim());
   } catch (error) {
     console.error(chalk.red('Erro ao classificar mensagem:'), error.response?.data || error.message || error);
-    return false;
+    // Em caso de erro no classificador, seja permissivo.
+    return true;
   }
 }
 
@@ -244,24 +258,30 @@ async function processMessage(text, sessionKey, userName, chatName) {
       { role: 'system', content: `Nome do usuário: ${userDescriptor}` },
       ...getFormattedMessages(conversationHistory[sessionKey].history),
     ];
+    if (!OPENROUTER_API_KEY) {
+      console.warn(chalk.yellow('⚠ OPENROUTER_API_KEY não definido.'));
+    }
     console.log(chalk.cyan('   Enviando requisição para OpenRouter...'));
-    const response = await axios.post(
+
+    // Tentativa com pequeno retry
+    const doCall = async () => axios.post(
       `${OPENROUTER_BASE_URL}/chat/completions`,
-      {
-        model: MODEL,
-        messages: messages,
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${OPENROUTER_API_KEY}`,
-          'Content-Type': 'application/json',
-        },
-        timeout: 20000,
-      }
+      { model: MODEL, messages },
+      { headers: { Authorization: `Bearer ${OPENROUTER_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 20000 }
     );
+
+    let response;
+    try {
+      response = await doCall();
+    } catch (err1) {
+      // retry simples em erro transitório
+      await new Promise(r => setTimeout(r, 600));
+      response = await doCall();
+    }
+
     let reply = response.data.choices?.[0]?.message?.content?.trim() || '';
     console.log(chalk.cyan(`   OpenRouter respondeu (bruto): "${reply}"`));
-    return reply;
+    return reply || 'Beleza! Pode mandar :)';
   } catch (error) {
     console.error(chalk.red('Erro ao processar mensagem:'), error.response?.data || error.message || error);
     return 'Desculpe, não consegui processar sua mensagem.';
@@ -281,47 +301,48 @@ const JUNK_DIRS = [
 ];
 
 class UpstashRedisStore {
-    constructor({ url, token }) {
-        this.redis = new Redis({ url, token });
-    }
+  constructor({ url, token }) {
+    this.redis = new Redis({ url, token });
+  }
 
-    async sessionExists({ session }) {
-        const v = await this.redis.get(`remoteauth:${session}`);
-        return v !== null;
-    }
+  async sessionExists({ session }) {
+    const v = await this.redis.get(`remoteauth:${session}`);
+    return v !== null;
+  }
 
-    async save({ session }) {
-        const zipPath = `${session}.zip`;
-        // 1. Lê o ZIP gerado pelo RemoteAuth
-        const originalZip = new AdmZip(zipPath);
-        // 2. Cria um ZIP “clean” copiando só os arquivos essenciais
-        const cleanZip = new AdmZip();
-        originalZip.getEntries().forEach(entry => {
-            if (!JUNK_DIRS.some(rx => rx.test(entry.entryName))) {
-                cleanZip.addFile(entry.entryName, entry.getData());
-            }
-        });
-        // 3. Serializa e salva no Redis em base64
-        const buf = cleanZip.toBuffer();
-        const b64 = buf.toString('base64');
-        await this.redis.set(`remoteauth:${session}`, b64);
-    }
+  async save({ session }) {
+    const zipPath = `${session}.zip`;
+    // 1. Lê o ZIP gerado pelo RemoteAuth
+    const originalZip = new AdmZip(zipPath);
+    // 2. Cria um ZIP “clean” copiando só os arquivos essenciais
+    const cleanZip = new AdmZip();
+    originalZip.getEntries().forEach(entry => {
+      if (!JUNK_DIRS.some(rx => rx.test(entry.entryName))) {
+        cleanZip.addFile(entry.entryName, entry.getData());
+      }
+    });
+    // 3. Serializa e salva no Redis em base64
+    const buf = cleanZip.toBuffer();
+    const b64 = buf.toString('base64');
+    await this.redis.set(`remoteauth:${session}`, b64);
+  }
 
-    async extract({ session, path }) {
-        const b64 = await this.redis.get(`remoteauth:${session}`);
-        if (b64) {
-            await fs.writeFile(`${session}.zip`, Buffer.from(b64, 'base64'));
-        }
+  async extract({ session, path }) {
+    // ⚠️ Correção: respeita o 'path' passado pelo RemoteAuth
+    const b64 = await this.redis.get(`remoteauth:${session}`);
+    if (b64) {
+      await fs.writeFile(path, Buffer.from(b64, 'base64'));
     }
+  }
 
-    async delete({ session }) {
-        await this.redis.del(`remoteauth:${session}`);
-    }
+  async delete({ session }) {
+    await this.redis.del(`remoteauth:${session}`);
+  }
 }
 
 async function createClient(usePinned) {
   let authStrategy;
-  
+
   updateProgress('redis', 'running', 'Conectando ao banco de dados Redis...');
   try {
     const store = new UpstashRedisStore({ url: UPSTASH_REDIS_REST_URL, token: UPSTASH_REDIS_REST_TOKEN });
@@ -340,10 +361,10 @@ async function createClient(usePinned) {
   });
 
   updateProgress('session', 'running', 'Verificando se existe sessão salva...');
-  if (await authStrategy.store.sessionExists({session: 'anderson-bot'})) {
-      updateProgress('session', 'success', 'Sessão encontrada! Iniciando restauração...');
+  if (await authStrategy.store.sessionExists({ session: 'anderson-bot' })) {
+    updateProgress('session', 'success', 'Sessão encontrada! Iniciando restauração...');
   } else {
-      updateProgress('session', 'success', 'Nenhuma sessão encontrada. Prepare-se para escanear o QR Code.');
+    updateProgress('session', 'success', 'Nenhuma sessão encontrada. Prepare-se para escanear o QR Code.');
   }
 
   client.on('qr', (qr) => {
@@ -352,14 +373,15 @@ async function createClient(usePinned) {
   });
 
   client.on('ready', () => {
+    SELF_ID = client.info?.wid?._serialized || null; // ← guarda o id do próprio bot
     updateProgress('ready', 'success', 'Bot conectado e totalmente operacional!');
-    console.log(chalk.green('Client is ready!'));
+    console.log(chalk.green('Client is ready!'), SELF_ID ? ` SELF_ID=${SELF_ID}` : '');
   });
 
   client.on('auth_failure', (msg) => {
     updateProgress('whatsapp', 'error', `Falha na autenticação: ${msg}`);
   });
-  
+
   client.on('disconnected', (reason) => {
     updateProgress('ready', 'error', `Bot desconectado: ${reason}`);
   });
@@ -370,11 +392,7 @@ async function createClient(usePinned) {
         await message.reply('pong!');
         return;
       }
-      if (coldStart) {
-        await message.reply('⚙️ Servidor carregado. Estou pronto!');
-        coldStart = false;
-      }
-      
+
       const chat = await message.getChat();
       const contact = await message.getContact();
       const userName = contact.pushname || contact.verifiedName || message.from;
@@ -382,29 +400,64 @@ async function createClient(usePinned) {
       const userId = message.author || chatId;
       const sessionKey = `${chatId}:${userId}`;
 
+      // Dados auxiliares para heurística
+      const isGroup = chat.isGroup;
+      const mentionedIds = message.mentionedIds || [];
+      let quotedFromMe = false;
+      if (message.hasQuotedMsg) {
+        try {
+          const quoted = await message.getQuotedMessage();
+          quotedFromMe = !!quoted?.fromMe;
+        } catch (_) { /* ignore */ }
+      }
+
       let shouldRespond = false;
-      if (!chat.isGroup) {
+      if (!isGroup) {
         shouldRespond = true;
       } else {
-        const context = buildContextSnippet(conversationHistory[sessionKey]?.history);
-        shouldRespond = await analyzeIfMessageIsForAI(message.body, context);
+        const heuristicOk = USE_LOCAL_HEURISTIC && localHeuristicForAI({
+          text: message.body,
+          isGroup,
+          selfId: SELF_ID,
+          mentionedIds,
+          quotedFromMe
+        });
+
+        if (heuristicOk) {
+          shouldRespond = true;
+        } else {
+          const context = buildContextSnippet(conversationHistory[sessionKey]?.history);
+          shouldRespond = await analyzeIfMessageIsForAI(message.body, context);
+        }
+      }
+
+      // Evita poluir grupos no boot: só avisa se realmente for com a IA
+      if (coldStart && shouldRespond) {
+        await message.reply('⚙️ Servidor carregado. Estou pronto!');
+        coldStart = false;
       }
 
       if (shouldRespond) {
+        if (!conversationHistory[sessionKey]) {
+          conversationHistory[sessionKey] = { name: userName, history: [] };
+        }
         const responseMessage = await processMessage(message.body, sessionKey, userName, chat.name);
-        
-        if (chat.isGroup) {
+
+        if (isGroup) {
           const chat_id = chat.id._serialized;
-          await client.sendMessage(chat_id, `@${contact.id.user} ${responseMessage}`, { mentions: [contact] });
+          // ✅ Correção: usar ID serializado em mentions + texto com @<user>
+          await client.sendMessage(
+            chat_id,
+            `@${contact.id.user} ${responseMessage}`,
+            { mentions: [contact.id._serialized] }
+          );
         } else {
           await message.reply(responseMessage);
         }
       }
     } catch (err) {
       console.error(chalk.red('⚠ Erro no handler de mensagem:'), err);
-      try {
-          await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem.');
-      } catch (_) {}
+      try { await message.reply('Desculpe, ocorreu um erro ao processar sua mensagem.'); } catch (_) {}
     }
   });
 
@@ -421,13 +474,13 @@ async function createClient(usePinned) {
 
 // --- LÓGICA DE INICIALIZAÇÃO ---
 server.listen(PORT, async () => {
-    updateProgress('server', 'success', 'Servidor web iniciado e aguardando o bot...');
-    console.log(chalk.green(`Servidor rodando na porta ${PORT}.`));
-    
-    try {
-      await wakeUpApi();
-      await createClient(true);
-    } catch (e) {
-      console.error(chalk.red(e));
-    }
+  updateProgress('server', 'success', 'Servidor web iniciado e aguardando o bot...');
+  console.log(chalk.green(`Servidor rodando na porta ${PORT}.`));
+
+  try {
+    await wakeUpApi();
+    await createClient(true);
+  } catch (e) {
+    console.error(chalk.red(e));
+  }
 });

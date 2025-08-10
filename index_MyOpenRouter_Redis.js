@@ -212,14 +212,16 @@ ${text}
 """
 
 **Sua Tarefa:**
-Com base em tudo acima, responda à seguinte pergunta: **"Seria apropriado e útil para o bot responder a esta mensagem?"**
+Com base em tudo acima, e **dando prioridade ao contexto da conversa recente para resolver ambiguidades**, responda à seguinte pergunta: **"Seria apropriado e útil para o bot responder a esta mensagem?"**
 
 Responda APENAS com "SIM" ou "NÃO".
 
-- Responda "SIM" se a mensagem for uma pergunta direta para você (o bot), se for sobre um tópico que você domina, ou se for uma interação social clara com você.
-- Responda "NÃO" se for uma conversa casual entre outras pessoas, uma pergunta para outra pessoa específica (ex: "Rafael, você viu isso?"), ou se sua intervenção não agregaria valor.
+- Responda "SIM" se a mensagem for uma pergunta direta para você (o bot), se for sobre um tópico que você domina e a conversa não for direcionada a outra pessoa, ou se for uma interação social clara com você.
+- Responda "NÃO" se for uma conversa casual entre outras pessoas, **uma continuação de uma conversa direcionada a outra pessoa (como no contexto recente)**, ou se sua intervenção não agregaria valor.
 
-Seu julgamento é crucial. Não seja excessivamente proativo.
+**Exemplo de Raciocínio:** Se a mensagem anterior foi "Rafael, pode me ajudar?" e a nova mensagem for "claro, o que precisa?", você deve responder "NÃO", pois a segunda mensagem é uma continuação da conversa com Rafael.
+
+Seu julgamento é crucial. Na dúvida, prefira não ser intrusivo.
 `;
 
     const response = await postWithRetry(
@@ -240,6 +242,7 @@ Seu julgamento é crucial. Não seja excessivamente proativo.
     return true;
   }
 }
+
 
 // ---------- envio principal ao OpenRouter com fallback e retentativas ----------
 async function processMessage(text, sessionKey, userName, chatName) {
@@ -549,9 +552,6 @@ async function createClient() {
 // --- servidor web de status (igual ao antigo) ---
 const app = express();
 const PORT = process.env.PORT || 3006;
-
-// Redireciona raiz para a página de status
-app.get('/', (_req, res) => res.redirect(302, '/status'));
 
 app.get('/healthz', (_req, res) => {
   res.status(200).json({ status: 'ok' });

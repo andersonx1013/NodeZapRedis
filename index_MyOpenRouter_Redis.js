@@ -595,7 +595,7 @@ app.get('/', (_req, res) => {
   const qrBlock = isQrPending
     ? `<div class="section qr">
          <h3>Escaneie o QR Code</h3>
-         <img src="/qr" alt="QR Code para conectar ao WhatsApp" style="max-width: 250px; display: block; margin: 10px auto;">
+         <img src="/qr?t=${Date.now()}" alt="QR Code para conectar ao WhatsApp" style="max-width: 250px; display: block; margin: 10px auto;">
        </div>`
     : '';
 

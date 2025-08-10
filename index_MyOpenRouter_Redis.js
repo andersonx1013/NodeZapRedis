@@ -553,43 +553,8 @@ async function createClient() {
 const app = express();
 const PORT = process.env.PORT || 3006;
 
-app.get('/healthz', (_req, res) => {
-  res.status(200).json({ status: 'ok' });
-});
-
-// Endpoint para o QR Code
-app.get('/qr', (_req, res) => {
-  if (qrCodeDataUrl) {
-    const img = Buffer.from(qrCodeDataUrl.split(',')[1], 'base64');
-    res.writeHead(200, {
-      'Content-Type': 'image/png',
-      'Content-Length': img.length,
-    });
-    res.end(img);
-  } else {
-    res.status(404).send('QR Code não disponível.');
-  }
-});
-
-// Endpoint JSON
-app.get('/status.json', (_req, res) => {
-  res.status(200).json({
-    phase: botStatus.phase,
-    startedAt: botStatus.startedAt,
-    readyAt: botStatus.readyAt,
-    errorAt: botStatus.errorAt,
-    errorMessage: botStatus.errorMessage,
-    qrCodeAvailable: !!qrCodeDataUrl,
-    notes: botStatus.notes.slice(-50),
-    steps: botStatus.steps,
-    node: process.version,
-    pid: process.pid,
-    uptimeSec: Math.floor(process.uptime()),
-  });
-});
-
-// Página HTML de status — mesmo layout e passos
-app.get('/status', (_req, res) => {
+// A rota raiz agora renderiza a página de status diretamente
+app.get('/', (_req, res) => {
   const isReady = botStatus.phase === 'ready';
   const isError = botStatus.phase === 'error';
   const isQrPending = botStatus.steps.find(s => s.key === 'qr')?.status === 'doing';
@@ -709,6 +674,44 @@ ${autoRefresh}
 </body>
 </html>`);
 });
+
+app.get('/healthz', (_req, res) => {
+  res.status(200).json({ status: 'ok' });
+});
+
+// Endpoint para o QR Code
+app.get('/qr', (_req, res) => {
+  if (qrCodeDataUrl) {
+    const img = Buffer.from(qrCodeDataUrl.split(',')[1], 'base64');
+    res.writeHead(200, {
+      'Content-Type': 'image/png',
+      'Content-Length': img.length,
+    });
+    res.end(img);
+  } else {
+    res.status(404).send('QR Code não disponível.');
+  }
+});
+
+// Endpoint JSON
+app.get('/status.json', (_req, res) => {
+  res.status(200).json({
+    phase: botStatus.phase,
+    startedAt: botStatus.startedAt,
+    readyAt: botStatus.readyAt,
+    errorAt: botStatus.errorAt,
+    errorMessage: botStatus.errorMessage,
+    qrCodeAvailable: !!qrCodeDataUrl,
+    notes: botStatus.notes.slice(-50),
+    steps: botStatus.steps,
+    node: process.version,
+    pid: process.pid,
+    uptimeSec: Math.floor(process.uptime()),
+  });
+});
+
+// A rota /status foi removida para evitar duplicidade.
+// A lógica agora está na rota raiz '/'.
 
 // --- bootstrap ---
 const server = app.listen(PORT, () => console.log(chalk.green(`Servidor web de status na porta ${PORT}`)));
